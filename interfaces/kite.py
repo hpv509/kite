@@ -1,19 +1,18 @@
-"""       
-        ##############################################################################      
-        #                        KITE | Release  1.1                                 #      
-        #                                                                            #      
-        #                        Kite home: quantum-kite.com                         #           
-        #                                                                            #      
-        #  Developed by: Simao M. Joao, Joao V. Lopes, Tatiana G. Rappoport,         #       
-        #  Misa Andelkovic, Lucian Covaci, Aires Ferreira, 2018-2022                 #      
-        #                                                                            #      
-        ##############################################################################      
+"""
+        ##############################################################################
+        #                        KITE | Release  1.1                                 #
+        #                                                                            #
+        #                        Kite home: quantum-kite.com                         #
+        #                                                                            #
+        #  Developed by: Simao M. Joao, Joao V. Lopes, Tatiana G. Rappoport,         #
+        #  Misa Andelkovic, Lucian Covaci, Aires Ferreira, 2018-2022                 #
+        #                                                                            #
+        ##############################################################################
 """
 
 import numpy as np
 import h5py as hp
-import pybinding as pb
-
+import numbers
 import warnings
 
 from scipy.sparse import coo_matrix
@@ -202,9 +201,9 @@ class StructuralDisorder:
         names, sublattices = zip(*self._lattice.sublattices.items())
 
         if from_sub not in names:
-            raise SystemExit('Desired initial sublattice doesnt exist in the chosen lattice! ')
+            raise SystemExit('Desired initial sublattice doesnt exist in the chosen lattice!')
         if to_sub not in names:
-            raise SystemExit('Desired final sublattice doesnt exist in the chosen lattice! ')
+            raise SystemExit('Desired final sublattice doesnt exist in the chosen lattice!')
 
         indx_from = names.index(from_sub)
         lattice_sub_from = sublattices[indx_from]
@@ -482,6 +481,11 @@ class Calculation:
         return self._ldos
 
     @property
+    def get_ldos_map(self):
+        """Returns the requested LDOS functions."""
+        return self._ldos_map
+
+    @property
     def get_arpes(self):
         """Returns the requested ARPES functions."""
         return self._arpes
@@ -512,6 +516,31 @@ class Calculation:
         """Returns the requested singleshot DC conductivity functions."""
         return self._singleshot_conductivity_dc
 
+    @property
+    def get_custom_operator_density(self):
+        """Returns the requested Orbital functions."""
+        return self._custom_operator_density
+
+    @property
+    def get_custom_conductivity_dc(self):
+        """Returns the requested DC conductivity functions with custom operators."""
+        return self._custom_conductivity_dc
+
+    @property
+    def get_custom_one(self):
+        """Returns the trace with custom operators."""
+        return self._custom_one
+
+    @property
+    def get_custom_two(self):
+        """Returns the trace with custom operators."""
+        return self._custom_two
+
+    @property
+    def get_local_chern(self):
+        """Returns the requested Local Chern number"""
+        return self._local_chern
+
     def __init__(self, configuration=None):
 
         if configuration is not None and not isinstance(configuration, Configuration):
@@ -519,14 +548,22 @@ class Calculation:
 
         self._scaling_factor = configuration.energy_scale
         self._energy_shift = configuration.energy_shift
-        self._dos = []
-        self._ldos = []
-        self._arpes = []
-        self._conductivity_dc = []
-        self._conductivity_optical = []
+        self._dos                            = []
+        self._ldos                           = []
+        self._ldos_map                       = []
+        self._arpes                          = []
+        self._conductivity_dc                = []
+        self._conductivity_optical           = []
         self._conductivity_optical_nonlinear = []
-        self._gaussian_wave_packet = []
-        self._singleshot_conductivity_dc = []
+        self._gaussian_wave_packet           = []
+        self._singleshot_conductivity_dc     = []
+        self._orbital_index_collection       = {}
+        self._custom_operator_collection     = {}
+        self._custom_operator_density        = []
+        self._custom_conductivity_dc         = []
+        self._custom_one                     = []
+        self._custom_two                     = []
+        self._local_chern                    = []
 
         self._avail_dir_full = {'xx': 0, 'yy': 1, 'zz': 2, 'xy': 3, 'xz': 4, 'yx': 5, 'yz': 6, 'zx': 7, 'zy': 8}
         self._avail_dir_nonl = {'xxx': 0, 'xxy': 1, 'xxz': 2, 'xyx': 3, 'xyy': 4, 'xyz': 5, 'xzx': 6, 'xzy': 7,
@@ -572,6 +609,27 @@ class Calculation:
 
         self._ldos.append({'energy': energy, 'num_moments': num_moments, 'position': np.asmatrix(position),
                            'sublattice': sublattice, 'num_disorder': num_disorder})
+
+    def ldos_map(self, energy_, sigma_, vectors_, coef = "gaussian"):
+        """Calculate the local density of states as a function of energy
+
+        Parameters
+        ----------
+        energy : float
+            Target energy where the map is evaluated.
+        sigma : float
+            Width of the Gaussian that approximates the Dirac-Delta
+        num_vectors : int
+            Number of different random vectors.
+        kernel : string
+            Choose the coefficients to be used. These will be translated into numbers which will be read by c++.
+        """
+
+        coef_dict = {"gaussian": 0, "window": 1}
+        coef_id = coef_dict[coef.lower()]
+
+        self._ldos_map.append({'energy': energy_, 'sigma': sigma_, 'vectors': vectors_, 'coef_id': coef_id})
+
 
     def arpes(self, k_vector, weight, num_moments, num_disorder=1):
         """Calculate the spectral contribution for given k-points and weights.
@@ -752,9 +810,160 @@ class Calculation:
                  'num_random': num_random, 'num_disorder': num_disorder,
                  'preserve_disorder': np.atleast_1d(preserve_disorder)})
 
+    def add_orbital_index(self, label_, idx_):
+        self._orbital_index_collection[label_] = idx_
+        # print(self._orbital_index_collection)
+
+    def add_orbital_coupling(self, start_, last_, c_, label_):
+        if not label_ or label_[0] != "l":
+            raise ValueError("The Label must begin with 'l' and cannot be empty.")
+        else:
+            if label_ not in self._custom_operator_collection.keys():
+                orb_num = len(self._orbital_index_collection.keys())
+                self._custom_operator_collection[label_] = np.zeros((orb_num, orb_num), dtype = 'complex')
+            row = self._orbital_index_collection[last_ ]
+            col = self._orbital_index_collection[start_]
+            self._custom_operator_collection[label_][row, col] = c_
+
+    def custom_operator_density(self, num_moments, num_random, num_disorder, stream):
+        """Calculate the custom operator density using KITEx for a given direction and energy
+        Parameters
+        ----------
+        num_moments : int
+            Number of polynomials in the Chebyshev expansion.
+        stream : list
+           Sequence of operators stored as a list: [[scalar, string], ..., [scalar, string]]
+        """
+        coefficients = []
+        operators    = []
+        for operator_sequence in stream:
+            if not isinstance(operator_sequence, list):
+                raise TypeError("The stream elements must be a list")
+            if not operator_sequence:
+                raise ValueError("The list cannot be empty.")
+            if not isinstance(operator_sequence[0], numbers.Number):
+                raise ValueError("The first element must be a numeric type")
+            coefficients.append(operator_sequence[0])
+            operators.append(operator_sequence[1])
+        self._custom_operator_density.append({'coefficients' : coefficients, 'operators' : operators, 'num_moments': np.atleast_1d(num_moments), 'num_random' : num_random, 'num_disorder' : num_disorder, 'num_coefficients' : len(coefficients)})
+
+    def custom_conductivity_dc(self, num_moments, num_random, num_disorder, stream, num_points, temperature):
+        """Calculate the full-spectrum DC conductivity for two operators streams
+        Tr[Tn Ja Tm Jb]
+
+        Parameters
+        ----------
+        num_moments : [int , int, ...]
+            Number of polynomials in the Chebyshev expansion.
+        num_random : int
+            Number of random vectors to use for the stochastic evaluation of trace.
+        num_disorder : int
+            Number of different disorder realisations.
+        stream: list
+            List of operators
+        num_points: int
+            Number of points in the energy
+        temperature : float
+            Value of the temperature at which we calculate the response.
+        """
+        coefs       = []
+        num_coefs   = []
+        operators   = []
+        tmp = []
+        for operator_sequence in stream:
+            if not isinstance(operator_sequence, list):
+                raise TypeError("The stream elements must be a list")
+            if not operator_sequence:
+                raise ValueError("The list cannot be empty.")
+            if not isinstance(operator_sequence[0], numbers.Number):
+                raise ValueError("The first element must be a numeric type")
+            if not isinstance(operator_sequence[1], numbers.Number):
+                raise ValueError("The second element must be a numeric type")
+            pos_trace = operator_sequence[0]
+            if pos_trace not in tmp:
+                coefs.append([])
+                operators.append([])
+                tmp.append(pos_trace)
+
+            coefs[pos_trace].append(operator_sequence[1])
+            operators[pos_trace].append(operator_sequence[2])
+        for i, val in enumerate(coefs):
+            num_coefs.append(len(coefs[i]))
+
+        self._custom_conductivity_dc.append({'coefficients' : coefs, 'operators' : operators, 'num_coefs' : num_coefs, 'num_moments': num_moments, 'rank' : len(num_moments), 'num_random' : num_random, 'num_disorder' : num_disorder, 'temperature': temperature, 'num_points' : num_points})
+
+    def custom_one(self, stream_, num_random_, num_disorder_):
+        """Calculate the rank one (Tr[Tn Ja]) custom operator trace
+        Parameters
+        ----------
+        stream_: [list]
+            List of operators
+        num_moments_ : int
+            Number of Moments used for each spectral expansion.
+        num_random_ : int
+            Number of random vectors to use for the stochastic evaluation of trace.
+        num_disorder_ : int
+            Number of different disorder realisations.
+        """
+        coefs       = []
+        operators   = []
+        if not stream_.stream:
+            raise ValueError("The vertex cannot be empty.")
+        for operator_sequence in stream_.stream:
+            if not isinstance(operator_sequence, list):
+                raise TypeError("The operator sequence must be a list")
+            if not isinstance(operator_sequence[0], numbers.Number):
+                raise ValueError("The first element must be a numeric type")
+            coefs.append(operator_sequence[0]) # numerical factor
+            operators.append(operator_sequence[1]) # operator streams
+        self._custom_one.append({'num_moments': stream_.moment, 'num_random' : num_random_, 'num_disorder' : num_disorder_, 'operators' : operators, 'coefs' : coefs})
+
+    def custom_two(self, stream_, num_random_, num_disorder_, num_points_, temperature_):
+        """Calculate the rank two (Tr[Tn Ja Tm Jb]) custom operator trace
+        Parameters
+        ----------
+        stream_: [list]
+            List of operators
+        num_moments_ : int
+            Number of Moments used for each spectral expansion.
+        num_random_ : int
+            Number of random vectors to use for the stochastic evaluation of trace.
+        num_disorder_ : int
+            Number of different disorder realisations.
+        num_points: int
+            Number of points in the energy
+        temperature : float
+            Value of the temperature at which we calculate the response.
+        """
+        # Check for Equal number of moments
+        if (len(stream_) != 2):
+            raise ValueError("Stream has to have two streams, [A, B]")
+        if (stream_[0].moment != stream_[1].moment):
+            raise ValueError("For now, KITE only supports equal moments in Tn, Tm.")
+
+        coefs       = []
+        operators   = []
+        for i, vertex in enumerate(stream_):
+            if not vertex.stream:
+                raise ValueError("The vertex cannot be empty.")
+            coefs.append([])
+            operators.append([])
+            for operator_sequence in vertex.stream:
+                if not isinstance(operator_sequence, list):
+                    raise TypeError("The operator sequence must be a list")
+                if not isinstance(operator_sequence[0], numbers.Number):
+                    raise ValueError("The first element must be a numeric type")
+                coefs[i].append(operator_sequence[0]) # numerical factor
+                operators[i].append(operator_sequence[1]) # operator streams
+
+        self._custom_two.append({'rank' : len(stream_), 'num_moments': stream_[0].moment, 'num_random' : num_random_, 'num_disorder' : num_disorder_, 'operators' : operators, 'coefs' : coefs, 'temperature': temperature_, 'num_points' : num_points_})
+
+    def local_chern(self, num_disorder_, beta_, miu_):
+        """Calculate the local chern using KITEx for a set of disorder realizations, at a fixed temperature and fermi energy
+        """
+        self._local_chern.append({'num_disorder' : num_disorder_, 'beta' : beta_, 'miu' : miu_})
 
 class Configuration:
-
     def __init__(self, divisions=(1, 1, 1), length=(1, 1, 1), boundaries=('open', 'open', 'open'),
                  is_complex=False, precision=1, spectrum_range=None, angles=(0, 0, 0), custom_local=False,
                  custom_local_print=False):
@@ -881,7 +1090,7 @@ class Configuration:
                 print("Badly Defined Boundaries!")
                 exit()
         return Bounds_tmp, BoundTwists
-        
+
     @property
     def leng(self):  # -> length:
         """Return the number of unit cell repetitions in each direction. """
@@ -901,252 +1110,6 @@ class Configuration:
     def print_custom_pot(self):  # -> potential
         """Return print custom potential flag"""
         return self._print_custom_local
-
-
-def make_pybinding_model(lattice, disorder=None, disorder_structural=None, **kwargs):
-    """Build a Pybinding model with disorder used in Kite. Bond disorder or magnetic field are not currently supported.
-
-    Parameters
-    ----------
-    lattice : pb.Lattice
-        Pybinding lattice object that carries the info about the unit cell vectors, unit cell cites, hopping terms and
-        onsite energies.
-    disorder : Disorder
-        Class that introduces Disorder into the initially built lattice. For more info check the Disorder class.
-    disorder_structural : StructuralDisorder
-        Class that introduces StructuralDisorder into the initially built lattice. For more info check the
-        StructuralDisorder class.
-    **kwargs: Optional arguments like shape .
-
-    """
-
-    shape = kwargs.get('shape', None)
-    if disorder_structural:
-        # check if there's a bond disorder term
-        # return an error if so
-        disorder_struc_list = disorder_structural
-        if not isinstance(disorder_structural, list):
-            disorder_struc_list = [disorder_structural]
-
-        for idx_struc, dis_struc in enumerate(disorder_struc_list):
-            if len(dis_struc._sub_from):
-                raise SystemExit(
-                    'Automatic scaling is not supported when bond disorder is specified. Please select the scaling '
-                    'bounds manually.')
-
-    def gaussian_disorder(sub, mean_value, stdv):
-        """Add gaussian disorder with selected mean value and standard deviation to the pybinding model.
-
-        Parameters
-        ----------
-        sub : str
-            Select a sublattice where disorder should be added.
-        mean_value : float
-            Select a mean value of the disorder.
-        stdv : float
-            Select standard deviation of the disorder.
-        """
-
-        @pb.onsite_energy_modifier
-        def modify_energy(energy, sub_id):
-            rand_onsite = np.random.normal(loc=mean_value, scale=stdv, size=len(energy[sub_id == sub]))
-            energy[sub_id == sub] += rand_onsite
-            return energy
-
-        return modify_energy
-
-    def deterministic_disorder(sub, mean_value):
-        """Add deterministic disorder with selected mean value to the Pybinding model.
-
-        Parameters
-        ----------
-        sub : str
-            Select a sublattice where disorder should be added.
-        mean_value : float
-            Select a mean value of the disorder.
-
-        """
-
-        @pb.onsite_energy_modifier
-        def modify_energy(energy, sub_id):
-            onsite = mean_value * np.ones(len(energy[sub_id == sub]))
-            energy[sub_id == sub] += onsite
-            return energy
-
-        return modify_energy
-
-    def uniform_disorder(sub, mean_value, stdv):
-        """Add uniform disorder with selected mean value and standard deviation to the Pybinding model.
-
-        Parameters
-        ----------
-        sub : str
-            Select a sublattice where disorder should be added.
-        mean_value : float
-            Select a mean value of the disorder.
-        stdv : float
-            Select standard deviation of the disorder.
-        """
-
-        @pb.onsite_energy_modifier
-        def modify_energy(energy, sub_id):
-            a = mean_value - stdv * np.sqrt(3)
-            b = mean_value + stdv * np.sqrt(3)
-
-            rand_onsite = np.random.uniform(low=a, high=b, size=len(energy[sub_id == sub]))
-            energy[sub_id == sub] += rand_onsite
-
-            return energy
-
-        return modify_energy
-
-    def vacancy_disorder(sub, concentration):
-        """Add vacancy disorder with selected concentration to the Pybinding model.
-
-        Parameters
-        ----------
-        sub : str
-            Select a sublattice where disorder should be added.
-        concentration : float
-            Concentration of the vacancy disorder.
-        """
-
-        @pb.site_state_modifier(min_neighbors=2)
-        def modifier(state, sub_id):
-            rand_vec = np.random.rand(len(state))
-            vacant_sublattice = np.logical_and(sub_id == sub, rand_vec < concentration)
-
-            state[vacant_sublattice] = False
-            return state
-
-        return modifier
-
-    def local_onsite_disorder(positions, value):
-        """Add onsite disorder as a part of StructuralDisorder class to the Pybinding model.
-
-        Parameters
-        ----------
-        positions : np.ndarray
-            Select positions where disorder should appear
-        value : np.ndarray
-            Value of the disordered onsite term.
-        """
-        space_size = np.array(positions).shape[1]
-
-        @pb.onsite_energy_modifier
-        def modify_energy(x, y, z, energy):
-            # all_positions = np.column_stack((x, y, z))[0:space_size, :]
-            all_positions = np.stack([x, y, z], axis=1)[:, 0:space_size]
-
-            kdtree1 = cKDTree(positions)
-            kdtree2 = cKDTree(all_positions)
-
-            d_max = 0.05
-            # find the closest elements between two trees, with d < d_max. Finds the desired elements from the
-            # parameters x, y, z being used inside the modifier function.
-            coo = kdtree1.sparse_distance_matrix(kdtree2, d_max, output_type='coo_matrix')
-
-            energy[coo.col] += value
-
-            return energy
-
-        return modify_energy
-
-    if not shape:
-
-        vectors = np.asarray(lattice.vectors)
-        space_size = vectors.shape[0]
-
-        # fix a size for 1D, 2D, or 3D
-        referent_size = 1
-
-        if space_size == 1:
-            referent_size = 1000
-        elif space_size == 2:
-            referent_size = 200
-        elif space_size == 3:
-            referent_size = 50
-
-        norm = np.sum(np.abs(vectors)**2, axis=-1)**(1./2)
-
-        num_each_dir = (referent_size / norm).astype(int)
-
-        shape_size = 2 * num_each_dir[0:space_size]
-        symmetry = 1 * num_each_dir[0:space_size]
-
-        shape = pb.primitive(*shape_size)
-        trans_symm = pb.translational_symmetry(*symmetry)
-        param = [shape, trans_symm]
-    else:
-        param = [shape]
-
-    model = pb.Model(lattice, *param)
-
-    if disorder:
-        disorder_list = disorder
-        if not isinstance(disorder, list):
-            disorder_list = [disorder]
-        for dis in disorder_list:
-            for idx in range(len(dis._type)):
-                if dis._type[idx].lower() == 'uniform':
-                    model.add(
-                        uniform_disorder(dis._sub_name[idx], dis._mean[idx], dis._stdv[idx]))
-                if dis._type[idx].lower() == 'gaussian':
-                    model.add(
-                        gaussian_disorder(dis._sub_name[idx], dis._mean[idx], dis._stdv[idx]))
-                if dis._type[idx].lower() == 'deterministic':
-                    model.add(deterministic_disorder(dis._sub_name[idx], dis._mean[idx]))
-
-    if disorder_structural:
-
-        disorder_struc_list = disorder_structural
-        if not isinstance(disorder_structural, list):
-            disorder_struc_list = [disorder_structural]
-
-        for idx_struc, dis_struc in enumerate(disorder_struc_list):
-            num_sites = model.system.num_sites
-            rand_vec = np.random.rand(num_sites)
-            space_size = np.array(lattice.vectors).shape[0]
-
-            for vac in dis_struc._vacancy_sub:
-                model.add(vacancy_disorder(sub=vac, concentration=dis_struc._concentration))
-
-            for idx in range(len(dis_struc._sub_onsite)):
-                names, sublattices = zip(*model.lattice.sublattices.items())
-
-                sublattice_alias = names.index(dis_struc._sub_onsite[idx])
-
-                select_sublattice = model.system.sublattices == sublattice_alias
-                sub_and_rand = np.logical_and(select_sublattice, rand_vec < dis_struc._concentration)
-
-                # generates a set of random positions that will be added to the nodes in structural disorder, problem
-                # because when only one sublattice is selected, effective concentration will be lower
-                positions = np.stack([model.system.positions.x[sub_and_rand],
-                                      model.system.positions.y[sub_and_rand],
-                                      model.system.positions.z[sub_and_rand]], axis=1)[:, 0:space_size]
-
-                # ref_pos = np.stack([model.system.positions.x[def_site_idx], model.system.positions.y[def_site_idx],
-                #                     model.system.positions.z[def_site_idx]], axis=1)[:, 0:space_size]
-
-                # get the position of onsite disordered sublattice
-                vectors = np.array(lattice.vectors)[:, 0:space_size]
-                pos_sub = lattice.sublattices[dis_struc._sub_onsite[idx]].position[0:space_size]
-
-                # make an array of positions of sites where the onsite disorder will be added
-                pos = pos_sub + np.dot(vectors.T, np.array(dis_struc._rel_idx_onsite[idx]))
-                select_pos = positions + pos
-
-                # add the onsite with value dis_struc._onsite[idx]
-                model.add(local_onsite_disorder(select_pos, dis_struc._onsite[idx]))
-
-    return model
-
-
-def estimate_bounds(lattice, disorder=None, disorder_structural=None):
-    model = make_pybinding_model(lattice, disorder, disorder_structural)
-    kpm = pb.kpm(model)
-    a, b = kpm.scaling_factors
-    return -a + b, a + b
 
 
 def config_system(lattice, config, calculation, modification=None, **kwargs):
@@ -1223,16 +1186,27 @@ def config_system(lattice, config, calculation, modification=None, **kwargs):
     print('SCALING:\n')
     # if bounds are not specified, find a rough estimate
     if not config.energy_scale:
-        print('\nAutomatic scaling is being done. If unexpected results are produced, consider '
-              '\nselecting the bounds manually. '
-              '\nEstimate of the spectrum bounds with a safety factor is: ')
-        e_min, e_max = estimate_bounds(lattice, disorder, disorder_structural)
-        print('({:.2f}, {:.2f} eV)\n'.format(e_min, e_max))
-        # add a safety factor for a scaling factor
-        config._energy_scale = (e_max - e_min) / (2 * 0.9)
-        config._energy_shift = (e_max + e_min) / 2
+
+        max_hopping_energy = 0
+        for name, hop in lattice.hoppings.items():
+            hopping_energy = np.max(np.abs(hop.energy))
+            if hopping_energy > max_hopping_energy:
+                max_hopping_energy = hopping_energy
+
+        max_onsite_energy = 0
+        for name, sub in lattice.sublattices.items():
+            onsite_energy = np.max(np.abs(sub.energy))
+            if onsite_energy > max_onsite_energy:
+                max_onsite_energy = onsite_energy
+
+        bound = max_onsite_energy + 6 * max_hopping_energy
+        e_min, e_max = - bound, bound
+        print('Using default bounds: ({:.2f}, {:.2f}) eV.'.format(e_min, e_max))
+
+        config._energy_scale = (e_max - e_min) / 2.0
+        config._energy_shift = (e_max + e_min) / 2.0
     else:
-        print('\nManual scaling is chosen. \n')
+        print('\nManual scaling was chosen. \n')
     print('\n##############################################################################\n')
     print('BOUNDARY CONDITIONS:\n')
 
@@ -1386,7 +1360,7 @@ def config_system(lattice, config, calculation, modification=None, **kwargs):
     f.create_dataset('Boundaries', data=bound, dtype='u4')
     f.create_dataset('BoundaryTwists', data=Twists, dtype=float) # JPPP Values of the Fixed Boundary Twists
 
-    
+
     print('\n##############################################################################\n')
     print('DECOMPOSITION:\n')
     domain_dec = config.div
@@ -1455,13 +1429,15 @@ def config_system(lattice, config, calculation, modification=None, **kwargs):
                 multiply_bmin * magnetic_field_min))
 
         if modification.flux:
-            multiply_bmin = int(round(modification.flux * leng[1]))
-            if multiply_bmin == 0:
-                raise SystemExit('The system is to small for a desired field.')
-            print('Closest_field to the one you selected is {:.2f} T which in the terms of flux quantum is {:.2f}'.
-                  format(multiply_bmin * magnetic_field_min, multiply_bmin / leng[1]))
+            # multiply_bmin = int(round(modification.flux * leng[1]))
+            multiply_bmin = float(modification.flux * leng[1])
+            # if multiply_bmin == 0:
+            #     raise SystemExit('The system is to small for a desired field.')
+            # print('Closest_field to the one you selected is {:.2f} T which in the terms of flux quantum is {:.2f}'.
+                  # format(multiply_bmin * magnetic_field_min, multiply_bmin / leng[1]))
             print('Selected field is {:.2f} T'.format(multiply_bmin * magnetic_field_min))
-        grp.create_dataset('MagneticFieldMul', data=int(multiply_bmin), dtype='u4')
+        # grp.create_dataset('MagneticFieldMul', data=int(multiply_bmin), dtype='u4')
+        grp.create_dataset('MagneticFieldMul', data=multiply_bmin, dtype='f8')
         print('\n##############################################################################\n')
 
     grp_dis = grp.create_group('Disorder')
@@ -1751,6 +1727,13 @@ def config_system(lattice, config, calculation, modification=None, **kwargs):
             grpc_p.create_dataset('FixPosition', data=np.asarray(fixed_positions), dtype=np.int32)
         grpc_p.create_dataset('NumDisorder', data=dis, dtype=np.int32)
 
+    if calculation.get_ldos_map:
+        grpc_p = grpc.create_group('ldos_map')
+        grpc_p.create_dataset('Energy', data = np.asarray(calculation._ldos_map[0]['energy']), dtype = np.float64)
+        grpc_p.create_dataset('Sigma', data = np.asarray(calculation._ldos_map[0]['sigma']), dtype = np.float64)
+        grpc_p.create_dataset('NumVectors', data = np.asarray(calculation._ldos_map[0]['vectors']), dtype = np.int32)
+        grpc_p.create_dataset('Coef_ID', data = np.asarray(calculation._ldos_map[0]['coef_id']), dtype = np.int32)
+
     if calculation.get_arpes:
         grpc_p = grpc.create_group('arpes')
 
@@ -1931,12 +1914,85 @@ def config_system(lattice, config, calculation, modification=None, **kwargs):
         grpc_p.create_dataset('Direction', data=np.asarray(direction), dtype=np.int32)
         grpc_p.create_dataset('PreserveDisorder', data=np.asarray(preserve_disorder).astype(int), dtype=np.int32)
 
+    if calculation.get_custom_operator_density:
+        grpc_p = grpc.create_group('CustomDensity')
+        grpc_op = grpc.create_group('CustomDensity/CustomOperators')
+
+        grpc_p.create_dataset('NumMoments', data = np.asarray(calculation._custom_operator_density[0]['num_moments']), dtype = np.int32)
+        grpc_p.create_dataset('NumRandoms', data = np.asarray(calculation._custom_operator_density[0]['num_random']), dtype = np.int32)
+        grpc_p.create_dataset('NumDisorder', data = np.asarray(calculation._custom_operator_density[0]['num_disorder']), dtype = np.int32)
+        grpc_p.create_dataset('NumCoefficients', data = np.asarray(calculation._custom_operator_density[0]['num_coefficients']), dtype = np.int32)
+        grpc_p.create_dataset('Coefficients', data = np.asarray(calculation._custom_operator_density[0]['coefficients']), dtype = np.float64)
+        grpc_p.create_dataset('Operators', data = calculation._custom_operator_density[0]['operators'], dtype = hp.string_dtype(encoding='utf-8'))
+
+        for label, operator in calculation._custom_operator_collection.items():
+            if complx:
+                grpc_op.create_dataset(label, data = np.asarray(operator).astype(config.type))
+            else:
+                grpc_op.create_dataset(label, data = np.asarray(operator).real.astype(config.type))
+
+    if calculation.get_custom_conductivity_dc:
+        grpc_p = grpc.create_group('CustomCondDC')
+        grpc_op = grpc.create_group('CustomCondDC/CustomOperators')
+
+        grpc_p.create_dataset('NumMoments', data = np.asarray(max(calculation._custom_conductivity_dc[0]['num_moments'])), dtype = np.int32)
+        grpc_p.create_dataset('NumRandoms', data = np.asarray(calculation._custom_conductivity_dc[0]['num_random']), dtype = np.int32)
+        grpc_p.create_dataset('NumDisorder', data = np.asarray(calculation._custom_conductivity_dc[0]['num_disorder']), dtype = np.int32)
+        grpc_p.create_dataset('Rank', data = np.asarray(calculation._custom_conductivity_dc[0]['rank']), dtype = np.int32)
+        grpc_p.create_dataset('NumPoints', data = np.asarray(calculation._custom_conductivity_dc[0]['num_points']), dtype = np.int32)
+        grpc_p.create_dataset('Temperature', data=np.asarray(calculation._custom_conductivity_dc[0]['temperature']) / config.energy_scale, dtype=np.float64)
+        for i in range(calculation._custom_conductivity_dc[0]['rank']):
+            grpc_pos = grpc.create_group(f'CustomCondDC/P{i:01d}')
+            grpc_pos.create_dataset('NumMoments', data = np.asarray(calculation._custom_conductivity_dc[0]['num_moments'][i]), dtype = np.int32)
+            grpc_pos.create_dataset('Coefficients', data = np.asarray(calculation._custom_conductivity_dc[0]['coefficients'][i]), dtype = np.float64)
+            grpc_pos.create_dataset('Operators', data = calculation._custom_conductivity_dc[0]['operators'][i], dtype = hp.string_dtype(encoding='utf-8'))
+            grpc_pos.create_dataset('NumCoefficients', data = np.asarray(calculation._custom_conductivity_dc[0]['num_coefs'][i]), dtype = np.int32)
+
+        for label, operator in calculation._custom_operator_collection.items():
+            grpc_op.create_dataset(label, data = np.asarray(operator).astype(config.type))
+
+    if calculation.get_custom_one:
+        grpc_p = grpc.create_group('CustomOne')
+        grpc_op = grpc.create_group('CustomOne/CustomOperators')
+        grpc_p.create_dataset('NumVectors', data = np.asarray(calculation._custom_one[0]['num_random']), dtype = np.int32)
+        grpc_p.create_dataset('NumDisorder', data = np.asarray(calculation._custom_one[0]['num_disorder']), dtype = np.int32)
+        grpc_p.create_dataset('NumMoments', data = np.asarray(calculation._custom_one[0]['num_moments']), dtype = np.int32)
+
+        grpc_p.create_dataset('Coefficients', data = np.asarray(calculation._custom_one[0]['coefs']).astype(np.complex64))
+        grpc_p.create_dataset('NumCoefficients', data = len(calculation._custom_one[0]['coefs']), dtype = np.int32)
+        grpc_p.create_dataset('Operators', data = calculation._custom_one[0]['operators'], dtype = hp.string_dtype(encoding='utf-8'))
+
+        for label, operator in calculation._custom_operator_collection.items():
+            grpc_op.create_dataset(label, data = np.asarray(operator).astype(config.type))
+
+    if calculation.get_custom_two:
+        grpc_p = grpc.create_group('CustomTwo')
+        grpc_op = grpc.create_group('CustomTwo/CustomOperators')
+        grpc_p.create_dataset('NumVectors', data = np.asarray(calculation._custom_two[0]['num_random']), dtype = np.int32)
+        grpc_p.create_dataset('NumDisorder', data = np.asarray(calculation._custom_two[0]['num_disorder']), dtype = np.int32)
+        grpc_p.create_dataset('NumMoments', data = np.asarray(calculation._custom_two[0]['num_moments']), dtype = np.int32)
+        grpc_p.create_dataset('NumPoints', data = np.asarray(calculation._custom_two[0]['num_points']), dtype = np.int32)
+        grpc_p.create_dataset('Temperature', data=np.asarray(calculation._custom_two[0]['temperature']) / config.energy_scale, dtype=np.float64)
+        for i in range(calculation._custom_two[0]['rank']):
+            grpc_vtx = grpc_p.create_group(f'Vertex{i:01d}')
+            grpc_vtx.create_dataset('Coefficients', data = np.asarray(calculation._custom_two[0]['coefs'][i]).astype(np.complex64))
+            grpc_vtx.create_dataset('NumCoefficients', data = len(calculation._custom_two[0]['coefs'][i]), dtype = np.int32)
+            grpc_vtx.create_dataset('Operators', data = calculation._custom_two[0]['operators'][i], dtype = hp.string_dtype(encoding='utf-8'))
+
+        for label, operator in calculation._custom_operator_collection.items():
+            grpc_op.create_dataset(label, data = np.asarray(operator).astype(config.type))
+
+    if calculation.get_local_chern:
+        grpc_p = grpc.create_group('LocalChern')
+        grpc_p.create_dataset('NumDisorder', data = np.asarray(calculation._local_chern[0]['num_disorder']), dtype = np.int32)
+        grpc_p.create_dataset('Beta', data = np.asarray(calculation._local_chern[0]['beta']), dtype = np.float64)
+        grpc_p.create_dataset('Miu', data = np.asarray(calculation._local_chern[0]['miu']), dtype = np.float64)
+
     print('\n##############################################################################\n')
     print('OUTPUT:\n')
     print('\nExporting of KITE configuration to {} finished.\n'.format(filename))
     print('\n##############################################################################\n')
     f.close()
-
 
 class LoudDeprecationWarning(UserWarning):
     """Python's DeprecationWarning is silent by default"""
