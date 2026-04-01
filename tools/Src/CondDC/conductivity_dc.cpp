@@ -262,12 +262,11 @@ void conductivity_dc<U, DIM>::override_parameters(){
           );
     }
 
-    if (NumMoments > MaxMoments)
-      throw std::runtime_error(
-        "NumMoments cannot be larger than the number of Chebyshev moments "
-        "computed with KITEx."
-      );
-
+    // integrate = true means to use the full energy range in the integration
+    if(variables.CondDC_integrate != -1){
+      full_range = variables.CondDC_integrate;
+      default_full_range = false;
+    }
 
     if(variables.CondDC_Scat != -8888){
         scat            = variables.CondDC_Scat/scale;
