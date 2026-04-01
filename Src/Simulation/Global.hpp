@@ -28,6 +28,7 @@ struct GLOBAL_VARIABLES {
   Eigen::Array <T, Eigen::Dynamic, Eigen::Dynamic> avg_ident;
   Eigen::Array <T, Eigen::Dynamic, Eigen::Dynamic> avg_results;
   Eigen::Array <double,3,1> GlobBTwist; // Glob Boundary Twist Angles
+  Eigen::Array<T, -1, -1> ldos_map;
   double kpm_iteration_time;
   
   bool calculate_arpes;
@@ -38,6 +39,7 @@ struct GLOBAL_VARIABLES {
   bool calculate_condopt;
   bool calculate_condopt2;
   bool calculate_singleshot;
+  bool calculate_ldos_map;
 
   GLOBAL_VARIABLES();
   void addbond ( std::size_t, std::ptrdiff_t, T );
