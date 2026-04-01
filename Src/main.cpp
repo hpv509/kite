@@ -24,11 +24,7 @@ class Simulation;
 #include "SimulationGlobal.hpp"
 #include "messages.hpp"
 
-typedef int indextype;
-
-
-
-int main(int argc, char *argv[]){  
+int main(int argc, char *argv[]){
   //(void) argc;
     
   print_header_message();

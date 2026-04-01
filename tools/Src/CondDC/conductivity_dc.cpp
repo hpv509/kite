@@ -23,6 +23,7 @@
 #include "../Tools/functions.hpp"
 
 #include "../macros.hpp"
+#include <stdexcept>
 
 template <typename T, unsigned DIM>
 conductivity_dc<T, DIM>::conductivity_dc(system_info<T, DIM>& info, shell_input & vari){
@@ -244,31 +245,28 @@ void conductivity_dc<U, DIM>::override_parameters(){
         NumThreads = variables.CondDC_nthreads;
         default_NumThreads = false;
 
-        if(NumThreads < 1){
-          std::cout << "NumThreads cannot be smaller than 1. Aborting.\n";
-          assert(NumThreads > 0);
-          exit(1);
-        }
-    }
+    if (NumThreads < 1)
+      throw std::runtime_error(
+        "NumThreads cannot be smaller than 1. Aborting.\n"
+      );
+  }
 
     if(variables.CondDC_NumMoments != -1){
         NumMoments = variables.CondDC_NumMoments;
         default_NumMoments = false;
 
-        if(NumMoments > MaxMoments){
-          std::cout << "NumMoments cannot be larger than the number of Chebyshev ";
-          std::cout << "moments computed with KITEx. Aborting.\n";
-            
-          assert(NumMoments <= MaxMoments);
-          exit(1);
-        }
+        if (NumMoments > MaxMoments)
+          throw std::runtime_error(
+            "NumMoments cannot be larger than the number of Chebyshev"
+            "moments computed with KITEx.Aborting.\n"
+          );
     }
 
-    // integrate = true means to use the full energy range in the integration
-    if(variables.CondDC_integrate != -1){
-        full_range = variables.CondDC_integrate;
-        default_full_range = false;
-    }
+    if (NumMoments > MaxMoments)
+      throw std::runtime_error(
+        "NumMoments cannot be larger than the number of Chebyshev moments "
+        "computed with KITEx."
+      );
 
 
     if(variables.CondDC_Scat != -8888){
