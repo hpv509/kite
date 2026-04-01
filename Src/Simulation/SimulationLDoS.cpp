@@ -14,6 +14,7 @@ class KPM_Vector;
 #include "Hamiltonian.hpp"
 #include "KPM_VectorBasis.hpp"
 #include "KPM_Vector.hpp"
+#include "Loop.hpp"
 
 template <typename T>
 T gauss_first(const unsigned n_, const T mu_, const T sigma_)
@@ -165,23 +166,23 @@ void Simulation<T, D>::store_ldos(const Eigen::Array<T, -1, 1> &results_)
 #pragma omp master
   Global.ldos_map.resize(r.Sizet, 1);
 #pragma omp barrier
+  std::array<unsigned, D> idx;
+  std::array<unsigned, D> start;
+  std::array<unsigned, D> final;
+  for (unsigned d = 0; d < D; ++d) {
+    start[d] = NGHOSTS;
+    final[d] = r.Ld[D - 1 - d] - NGHOSTS;
+  }
   for (unsigned io = 0, Io = r.Orb; io < Io; ++io) {
-    if constexpr (D == 3) {
-      for (unsigned i2 = NGHOSTS, I2 = r.Ld[2] - NGHOSTS; i2 < I2; ++i2)
-        for (unsigned i1 = NGHOSTS, I1 = r.Ld[1] - NGHOSTS; i1 < I1; ++i1)
-          for (unsigned i0 = NGHOSTS, I0 = r.Ld[0] - NGHOSTS; i0 < I0; ++i0) {
-            local.set({i0, i1, i2, io});
-            r.convertCoordinates(global, local);
-            Global.ldos_map(global.index) = results_(local.index);
-          }
-    } else if constexpr (D == 2) {
-      for (unsigned i1 = NGHOSTS, I1 = r.Ld[1] - NGHOSTS; i1 < I1; ++i1)
-        for (unsigned i0 = NGHOSTS, I0 = r.Ld[0] - NGHOSTS; i0 < I0; ++i0) {
-          local.set({i0, i1, io});
-          r.convertCoordinates(global, local);
-          Global.ldos_map(global.index) = results_(local.index);
-        }
-    }
+    auto body = [&](const std::array<unsigned, D> &i) {
+      if constexpr (D == 2)
+        local.set({i[1], i[0], io});
+      else if constexpr (D == 3)
+        local.set({i[2], i[1], i[0], io});
+      r.convertCoordinates(global, local);
+      Global.ldos_map(global.index) = results_(local.index);
+    };
+    UnitCellLoop<D>::run(idx, start, final, body);
   }
 #pragma omp barrier
 #pragma omp master
