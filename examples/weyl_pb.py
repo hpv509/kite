@@ -22,7 +22,6 @@ import pybinding as pb
 import numpy as np
 
 filename = "Pb_Weyl.h5"
-# filename = "Lat_Weyl.h5"
 
 def weyl_semimetal(t=1):
     """Return lattice specification for a Weyl Semimetal lattice"""
