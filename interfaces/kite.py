@@ -521,10 +521,10 @@ class Calculation:
         """Returns the requested Orbital functions."""
         return self._custom_operator_density
 
-    @property
-    def get_custom_conductivity_dc(self):
-        """Returns the requested DC conductivity functions with custom operators."""
-        return self._custom_conductivity_dc
+    # @property
+    # def get_custom_conductivity_dc(self):
+    #     """Returns the requested DC conductivity functions with custom operators."""
+    #     return self._custom_conductivity_dc
 
     @property
     def get_custom_one(self):
@@ -560,7 +560,6 @@ class Calculation:
         self._orbital_index_collection       = {}
         self._custom_operator_collection     = {}
         self._custom_operator_density        = []
-        self._custom_conductivity_dc         = []
         self._custom_one                     = []
         self._custom_two                     = []
         self._local_chern                    = []
@@ -846,51 +845,6 @@ class Calculation:
             coefficients.append(operator_sequence[0])
             operators.append(operator_sequence[1])
         self._custom_operator_density.append({'coefficients' : coefficients, 'operators' : operators, 'num_moments': np.atleast_1d(num_moments), 'num_random' : num_random, 'num_disorder' : num_disorder, 'num_coefficients' : len(coefficients)})
-
-    def custom_conductivity_dc(self, num_moments, num_random, num_disorder, stream, num_points, temperature):
-        """Calculate the full-spectrum DC conductivity for two operators streams
-        Tr[Tn Ja Tm Jb]
-
-        Parameters
-        ----------
-        num_moments : [int , int, ...]
-            Number of polynomials in the Chebyshev expansion.
-        num_random : int
-            Number of random vectors to use for the stochastic evaluation of trace.
-        num_disorder : int
-            Number of different disorder realisations.
-        stream: list
-            List of operators
-        num_points: int
-            Number of points in the energy
-        temperature : float
-            Value of the temperature at which we calculate the response.
-        """
-        coefs       = []
-        num_coefs   = []
-        operators   = []
-        tmp = []
-        for operator_sequence in stream:
-            if not isinstance(operator_sequence, list):
-                raise TypeError("The stream elements must be a list")
-            if not operator_sequence:
-                raise ValueError("The list cannot be empty.")
-            if not isinstance(operator_sequence[0], numbers.Number):
-                raise ValueError("The first element must be a numeric type")
-            if not isinstance(operator_sequence[1], numbers.Number):
-                raise ValueError("The second element must be a numeric type")
-            pos_trace = operator_sequence[0]
-            if pos_trace not in tmp:
-                coefs.append([])
-                operators.append([])
-                tmp.append(pos_trace)
-
-            coefs[pos_trace].append(operator_sequence[1])
-            operators[pos_trace].append(operator_sequence[2])
-        for i, val in enumerate(coefs):
-            num_coefs.append(len(coefs[i]))
-
-        self._custom_conductivity_dc.append({'coefficients' : coefs, 'operators' : operators, 'num_coefs' : num_coefs, 'num_moments': num_moments, 'rank' : len(num_moments), 'num_random' : num_random, 'num_disorder' : num_disorder, 'temperature': temperature, 'num_points' : num_points})
 
     def custom_one(self, stream_, num_random_, num_disorder_):
         """Calculate the rank one (Tr[Tn Ja]) custom operator trace
@@ -1930,26 +1884,6 @@ def config_system(lattice, config, calculation, modification=None, **kwargs):
                 grpc_op.create_dataset(label, data = np.asarray(operator).astype(config.type))
             else:
                 grpc_op.create_dataset(label, data = np.asarray(operator).real.astype(config.type))
-
-    if calculation.get_custom_conductivity_dc:
-        grpc_p = grpc.create_group('CustomCondDC')
-        grpc_op = grpc.create_group('CustomCondDC/CustomOperators')
-
-        grpc_p.create_dataset('NumMoments', data = np.asarray(max(calculation._custom_conductivity_dc[0]['num_moments'])), dtype = np.int32)
-        grpc_p.create_dataset('NumRandoms', data = np.asarray(calculation._custom_conductivity_dc[0]['num_random']), dtype = np.int32)
-        grpc_p.create_dataset('NumDisorder', data = np.asarray(calculation._custom_conductivity_dc[0]['num_disorder']), dtype = np.int32)
-        grpc_p.create_dataset('Rank', data = np.asarray(calculation._custom_conductivity_dc[0]['rank']), dtype = np.int32)
-        grpc_p.create_dataset('NumPoints', data = np.asarray(calculation._custom_conductivity_dc[0]['num_points']), dtype = np.int32)
-        grpc_p.create_dataset('Temperature', data=np.asarray(calculation._custom_conductivity_dc[0]['temperature']) / config.energy_scale, dtype=np.float64)
-        for i in range(calculation._custom_conductivity_dc[0]['rank']):
-            grpc_pos = grpc.create_group(f'CustomCondDC/P{i:01d}')
-            grpc_pos.create_dataset('NumMoments', data = np.asarray(calculation._custom_conductivity_dc[0]['num_moments'][i]), dtype = np.int32)
-            grpc_pos.create_dataset('Coefficients', data = np.asarray(calculation._custom_conductivity_dc[0]['coefficients'][i]), dtype = np.float64)
-            grpc_pos.create_dataset('Operators', data = calculation._custom_conductivity_dc[0]['operators'][i], dtype = hp.string_dtype(encoding='utf-8'))
-            grpc_pos.create_dataset('NumCoefficients', data = np.asarray(calculation._custom_conductivity_dc[0]['num_coefs'][i]), dtype = np.int32)
-
-        for label, operator in calculation._custom_operator_collection.items():
-            grpc_op.create_dataset(label, data = np.asarray(operator).astype(config.type))
 
     if calculation.get_custom_one:
         grpc_p = grpc.create_group('CustomOne')
