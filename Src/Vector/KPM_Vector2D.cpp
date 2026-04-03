@@ -567,8 +567,8 @@ void KPM_Vector <T, 2>::KPM_MOTOR(KPM_Vector<T,2> *kpm_final, unsigned axis)
     
   for(auto id = h.hd.begin(); id != h.hd.end(); id++)
     id->template multiply_broken_defect<MULT,VELOCITY>(phi0, phiM1,axis);
-	  
-  Exchange_Boundaries();
+
+  kpm_final->Exchange_Boundaries();
 
 
 }

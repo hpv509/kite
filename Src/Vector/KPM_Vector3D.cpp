@@ -801,8 +801,8 @@ void KPM_Vector <T, 3>::KPM_MOTOR(KPM_Vector<T,3> *kpm_final, unsigned axis)
     id->template multiply_broken_defect<MULT,VELOCITY>(phi0, phiM1,axis);
 	  
   // These four lines pertrain only to the magnetic field
-  Exchange_Boundaries();
-  
+  kpm_final -> Exchange_Boundaries();
+
 }
 
 
