@@ -57,6 +57,34 @@ Eigen::Array<T, -1, 1> build_gaussian(const T energy_, const T width_)
   return coefs;
 }
 
+template <typename T>
+T jackson(const int n_, const int polynomials_)
+{
+  const T arg = M_PI / (polynomials_ + 1);
+  const T term1 = (polynomials_ - n_ + 1) * std::cos(arg * n_);
+  const T term2 = std::sin(arg * n_) / std::tan(arg);
+  return (term1 + term2) / (polynomials_ + 1);
+}
+
+template <typename T>
+Eigen::Array<T, -1, 1> build_window(const T energy_, const T width_)
+{
+  // const type energy_rescaled = energy_ / cst::energy_scale;
+  // const type width_rescaled = width_ / cst::energy_scale;
+  const T min = energy_ - 0.5 * width_;
+  const T max = energy_ + 0.5 * width_;
+  const unsigned number_polynomials = std::ceil(64 / width_);
+  Eigen::Array<T, -1, 1> coefs(number_polynomials);
+  const T diff = std::asin(max) - std::asin(min);
+  coefs(0) = jackson<T>(0, number_polynomials) * diff;
+  for (unsigned n = 1; n < number_polynomials; ++n)
+    coefs(n) = 2 * jackson<T>(n, number_polynomials) *
+               (std::sin(n * std::acos(min)) - std::sin(n * std::acos(max))) /
+               n;
+  coefs /= M_PI;
+  return coefs;
+}
+
 template <typename T, unsigned D>
 void Simulation<T, D>::calc_ldos()
 {
@@ -123,10 +151,13 @@ void Simulation<T, D>::ldos(
 #pragma omp barrier
     const value_type target = energy_ / energy_scale;
     const value_type sigma = sigma_ / energy_scale;
-    const value_type fwhm = std::sqrt(2) * sigma;
+    // const value_type fwhm = std::sqrt(2) * sigma;
+    const value_type fwhm = 1.0 * sigma;
     const value_type size = r.Sizet - r.SizetVacancies;
-    const value_type factor = std::sqrt(8 * M_PI) * sigma;
-    const Eigen::Array coefs = build_gaussian<value_type>(target, fwhm);
+    // const value_type factor = std::sqrt(8 * M_PI) * sigma;
+    const value_type factor = 1.0;
+    // const Eigen::Array coefs = build_gaussian<value_type>(target, fwhm);
+    const Eigen::Array coefs = build_window<value_type>(target, fwhm);
 
     KPM_Vector<T, D> phi(2, *this);
     Eigen::Array<T, -1, 1> ket(r.Sized);
@@ -201,6 +232,9 @@ void Simulation<T, D>::store_ldos(const Eigen::Array<T, -1, 1> &results_)
 #define INSTANTIATE_GAUSS(type)                                                \
   template type gauss_first<type>(const unsigned, const type, const type);     \
   template type gauss_second<type>(const unsigned, const type, const type);    \
+  template Eigen::Array<type, -1, 1>                                           \
+  build_window<type>(const type, const type);                                  \
+  template type jackson<type>(const int, const int);                           \
   template Eigen::Array<type, -1, 1> build_gaussian(const type, const type);
 
 INSTANTIATE_GAUSS(float)
