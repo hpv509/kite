@@ -17,15 +17,6 @@ class KPM_Vector;
 #include "Loop.hpp"
 
 template <typename T>
-T jackson(const int n_, const int polynomials_)
-{
-  const T arg = M_PI / (polynomials_ + 1);
-  const T term1 = (polynomials_ - n_ + 1) * std::cos(arg * n_);
-  const T term2 = std::sin(arg * n_) / std::tan(arg);
-  return (term1 + term2) / (polynomials_ + 1);
-}
-
-template <typename T>
 T gauss_first(const unsigned n_, const T mu_, const T sigma_)
 {
   const T numerator = n_ * mu_ * sigma_ * sigma_ *
@@ -161,21 +152,22 @@ void Simulation<T, D>::ldos(
 #pragma omp barrier
     const value_type target = energy_ / energy_scale;
     const value_type sigma = sigma_ / energy_scale;
-    // const value_type fwhm = std::sqrt(2) * sigma;
-    const value_type fwhm = 1.0 * sigma;
     const value_type size = r.Sizet - r.SizetVacancies;
+    value_type factor;
 
     Eigen::Array<value_type, -1, 1> coefs;
-    if (coef_id_ == 1)
+    if (coef_id_)
       {
-	const value_type factor = 1;
+	const value_type fwhm = sigma;
+	factor = 1.0;
 	coefs = build_window<value_type>(target, fwhm);
-      };
+      }
     else
       {
-	const value_type factor = std::sqrt(8 * M_PI) * sigma;
+	const value_type fwhm = std::sqrt(2) * sigma;
+        factor = std::sqrt(8 * M_PI) * sigma;
 	coefs = build_gaussian<value_type>(target, fwhm);
-      };
+      }
 
     KPM_Vector<T, D> phi(2, *this);
     Eigen::Array<T, -1, 1> ket(r.Sized);
