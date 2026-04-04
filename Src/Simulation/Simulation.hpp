@@ -69,6 +69,6 @@ public:
   void store_ARPES(Eigen::Array<T, -1, -1> *);
 
   void calc_ldos();
-  void ldos(const int, const value_type, const value_type);
-  void store_ldos(const Eigen::Array<T, -1, 1> &);
+  void ldos(const int, const value_type, const value_type, const int);
+  void store_ldos(const Eigen::Array<T, -1, -1> &);
 };
