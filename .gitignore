@@ -88,6 +88,7 @@ build/
 
 # formatters
 .clang-format
+sync/
 
 # except the test folders
 !tests/*/*REF.h5
