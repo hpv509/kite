@@ -1,31 +1,27 @@
 PREFIX  := build
 CXX     := g++
+LINK    := h5c++
 OBJDIR  := $(PREFIX)/.obj
 
 # Eigen-Dir
-EIGEN_INC := -I /usr/local/include/eigen3
+EIGEN_INC := -I/usr/local/include/eigen3
 
-# HDF5 flags (use the ones from pkg-config by default. If absent use fallback option)
-HDF5_CXXFLAGS := $(shell pkg-config --cflags hdf5_cpp hdf5 2>/dev/null)
-HDF5_LIBS     := $(shell pkg-config --libs   hdf5_cpp hdf5 2>/dev/null)
-ifeq ($(strip $(HDF5_LIBS)),)
-  HDF5_LIBS := -lhdf5_cpp -lhdf5
-endif
+# HDF5-Dir
+HDF5_FLAGS := $(shell h5c++ -show | tr ' ' '\n' | grep '^-I' | xargs)
 
 CPPFLAGS := $(EIGEN_INC) \
-	-I tools/Src \
-	-I Src \
-	-I Src/Tools \
-	-I Src/Lattice \
-	-I Src/Hamiltonian \
-	-I Src/Vector \
-	-I Src/Simulation \
+	-Itools/Src \
+	-ISrc \
+	-ISrc/Tools \
+	-ISrc/Lattice \
+	-ISrc/Hamiltonian \
+	-ISrc/Vector \
+	-ISrc/Simulation \
 	-DCOMPILE_WAVEPACKET=0 \
-	$(HDF5_CXXFLAGS)
+	$(HDF5_FLAGS)
 
 CXXFLAGS := -std=c++17 -O3 -fopenmp
 LDFLAGS  := -fopenmp
-LDLIBS   := $(HDF5_LIBS)
 
 SRC_KITEX := $(shell find Src -name '*.cpp')
 SRC_TOOLS := $(shell find tools/Src -name '*.cpp')
@@ -37,11 +33,11 @@ all: KITEx KITE-tools
 
 KITEx: $(OBJ_KITEX)
 	@mkdir -p $(PREFIX)
-	$(CXX) $(LDFLAGS) $^ $(LDLIBS) -o $(PREFIX)/$@
+	$(LINK) $(LDFLAGS) $^ -o $(PREFIX)/$@
 
 KITE-tools: $(OBJ_TOOLS)
 	@mkdir -p $(PREFIX)
-	$(CXX) $(LDFLAGS) $^ $(LDLIBS) -o $(PREFIX)/$@
+	$(LINK) $(LDFLAGS) $^ -o $(PREFIX)/$@
 
 $(OBJDIR)/%.o: %.cpp
 	@mkdir -p $(dir $@)

@@ -153,32 +153,20 @@ void Simulation<T, D>::ldos(
     const value_type target = energy_ / energy_scale;
     const value_type sigma = sigma_ / energy_scale;
     const value_type size = r.Sizet - r.SizetVacancies;
-    value_type factor;
-
-    Eigen::Array<value_type, -1, 1> coefs;
-    if (coef_id_)
-      {
-	const value_type fwhm = sigma;
-	factor = 1.0;
-	coefs = build_window<value_type>(target, fwhm);
-      }
-    else
-      {
-	const value_type fwhm = std::sqrt(2) * sigma;
-        factor = std::sqrt(8 * M_PI) * sigma;
-	coefs = build_gaussian<value_type>(target, fwhm);
-      }
+    const value_type factor = (coef_id_) ? 1.0 : std::sqrt(8 * M_PI) * sigma;
+    const value_type fwhm = (coef_id_) ? sigma : std::sqrt(2) * sigma;
+    const Eigen::Array<value_type, -1, 1> coefs =
+      (coef_id_) ? build_window<value_type>(target, fwhm)
+                 : build_gaussian<value_type>(target, fwhm);
 
     KPM_Vector<T, D> phi(2, *this);
     Eigen::Array<T, -1, 1> ket(r.Sized);
     Eigen::Array<T, -1, 1> bra(r.Sized);
-    Eigen::Array<T, -1, -1> results(r.Sized,2);
-    Eigen::Array<T, -1, 1> results_tmp(r.Sized);
-
-    std::array<KPM_Vector<T, D> *, 3> vectors;
+    Eigen::Array<T, -1, -1> results(r.Sized, 2);
     results.setZero();
-    h.generate_disorder();
+    Eigen::Array<T, -1, 1> prv(r.Sized);
 
+    h.generate_disorder();
     for (int vec = 0; vec < vectors_; ++vec) {
       h.generate_twists();
       phi.initiate_phases();
@@ -194,11 +182,12 @@ void Simulation<T, D>::ldos(
         ket += coefs(n) * phi.v.col(phi.get_index()).array();
       }
       const value_type weight = 1.0 / (vec + 1);
-      const Eigen::Array<T, -1, 1> results_single = factor * (bra.conjugate() * ket).abs2();
+      const Eigen::Array<T, -1, 1> map =
+        factor * (bra.conjugate() * ket).abs2();
 
-      results_tmp = results.col(0);
-      results.col(0) += weight * (results_single  - results.col(0));
-      results.col(1) += weight * ( (results_single - results_tmp) * (results_single - results.col(0)) - results.col(1) );
+      prv = results.col(0);
+      results.col(0) += weight * (map - results.col(0));
+      results.col(1) += weight * ((map - prv) * (map - results.col(0)) - results.col(1));
     }
     results.col(1) = results.col(1).sqrt() / std::sqrt(vectors_);
     store_ldos(results);

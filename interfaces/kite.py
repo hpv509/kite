@@ -517,16 +517,6 @@ class Calculation:
         return self._singleshot_conductivity_dc
 
     @property
-    def get_custom_operator_density(self):
-        """Returns the requested Orbital functions."""
-        return self._custom_operator_density
-
-    # @property
-    # def get_custom_conductivity_dc(self):
-    #     """Returns the requested DC conductivity functions with custom operators."""
-    #     return self._custom_conductivity_dc
-
-    @property
     def get_custom_one(self):
         """Returns the trace with custom operators."""
         return self._custom_one
@@ -559,7 +549,6 @@ class Calculation:
         self._singleshot_conductivity_dc     = []
         self._orbital_index_collection       = {}
         self._custom_operator_collection     = {}
-        self._custom_operator_density        = []
         self._custom_one                     = []
         self._custom_two                     = []
         self._local_chern                    = []
@@ -823,28 +812,6 @@ class Calculation:
             row = self._orbital_index_collection[last_ ]
             col = self._orbital_index_collection[start_]
             self._custom_operator_collection[label_][row, col] = c_
-
-    def custom_operator_density(self, num_moments, num_random, num_disorder, stream):
-        """Calculate the custom operator density using KITEx for a given direction and energy
-        Parameters
-        ----------
-        num_moments : int
-            Number of polynomials in the Chebyshev expansion.
-        stream : list
-           Sequence of operators stored as a list: [[scalar, string], ..., [scalar, string]]
-        """
-        coefficients = []
-        operators    = []
-        for operator_sequence in stream:
-            if not isinstance(operator_sequence, list):
-                raise TypeError("The stream elements must be a list")
-            if not operator_sequence:
-                raise ValueError("The list cannot be empty.")
-            if not isinstance(operator_sequence[0], numbers.Number):
-                raise ValueError("The first element must be a numeric type")
-            coefficients.append(operator_sequence[0])
-            operators.append(operator_sequence[1])
-        self._custom_operator_density.append({'coefficients' : coefficients, 'operators' : operators, 'num_moments': np.atleast_1d(num_moments), 'num_random' : num_random, 'num_disorder' : num_disorder, 'num_coefficients' : len(coefficients)})
 
     def custom_one(self, stream_, num_random_, num_disorder_):
         """Calculate the rank one (Tr[Tn Ja]) custom operator trace
@@ -1867,23 +1834,6 @@ def config_system(lattice, config, calculation, modification=None, **kwargs):
         grpc_p.create_dataset('Gamma', data=np.asarray(eta) / config.energy_scale, dtype=np.float64)
         grpc_p.create_dataset('Direction', data=np.asarray(direction), dtype=np.int32)
         grpc_p.create_dataset('PreserveDisorder', data=np.asarray(preserve_disorder).astype(int), dtype=np.int32)
-
-    if calculation.get_custom_operator_density:
-        grpc_p = grpc.create_group('CustomDensity')
-        grpc_op = grpc.create_group('CustomDensity/CustomOperators')
-
-        grpc_p.create_dataset('NumMoments', data = np.asarray(calculation._custom_operator_density[0]['num_moments']), dtype = np.int32)
-        grpc_p.create_dataset('NumRandoms', data = np.asarray(calculation._custom_operator_density[0]['num_random']), dtype = np.int32)
-        grpc_p.create_dataset('NumDisorder', data = np.asarray(calculation._custom_operator_density[0]['num_disorder']), dtype = np.int32)
-        grpc_p.create_dataset('NumCoefficients', data = np.asarray(calculation._custom_operator_density[0]['num_coefficients']), dtype = np.int32)
-        grpc_p.create_dataset('Coefficients', data = np.asarray(calculation._custom_operator_density[0]['coefficients']), dtype = np.float64)
-        grpc_p.create_dataset('Operators', data = calculation._custom_operator_density[0]['operators'], dtype = hp.string_dtype(encoding='utf-8'))
-
-        for label, operator in calculation._custom_operator_collection.items():
-            if complx:
-                grpc_op.create_dataset(label, data = np.asarray(operator).astype(config.type))
-            else:
-                grpc_op.create_dataset(label, data = np.asarray(operator).real.astype(config.type))
 
     if calculation.get_custom_one:
         grpc_p = grpc.create_group('CustomOne')
