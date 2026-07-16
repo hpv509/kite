@@ -47,10 +47,16 @@ if (OPENMP_FOUND)
     set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 endif()
 
-
-
-
-
+find_library(FFTW3_LIB NAMES fftw3)
+find_library(FFTW3F_LIB NAMES fftw3f)
+find_library(FFTW3L_LIB NAMES fftw3l)
+if(FFTW3_LIB AND FFTW3F_LIB AND FFTW3L_LIB)
+    set(FFT_LIBS ${FFTW3F_LIB} ${FFTW3_LIB} ${FFTW3L_LIB})
+    MESSAGE(STATUS "Found FFTW3 libraries: ${FFT_LIBS}")
+else()
+    MESSAGE(STATUS "FFTW3 libraries not found by find_library, falling back to linker flags")
+    set(FFT_LIBS "-lfftw3f" "-lfftw3" "-lfftw3l")
+endif()
 
 FILE(GLOB_RECURSE SRCFILES Src/*.cpp)
 MESSAGE(STATUS "Files to compile" ${SRCFILES})
@@ -64,8 +70,7 @@ if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 8.0.0)
 endif()
 add_definitions(-DCOMPILE_WAVEPACKET=${compile_wp})
 
-
-target_link_libraries(KITEx ${HDF5_CXX_LIBRARIES})
+target_link_libraries(KITEx ${HDF5_CXX_LIBRARIES} ${FFT_LIBS})
 target_include_directories(KITEx PRIVATE "Src/"
 "Src/Tools/"
 "Src/Lattice/"
@@ -93,5 +98,5 @@ configure_file (
   )
 
 include_directories(${Src})
-target_link_libraries(KITE-tools ${HDF5_CXX_LIBRARIES} )
+target_link_libraries(KITE-tools ${HDF5_CXX_LIBRARIES} ${FFT_LIBS})
 install (TARGETS KITE-tools DESTINATION bin)

@@ -19,7 +19,6 @@ class Simulation;
 #include "Hamiltonian.hpp"
 #include "KPM_VectorBasis.hpp"
 #include "KPM_Vector.hpp"
-//#include "queue.hpp"
 #include "Simulation.hpp"
 
 
@@ -160,42 +159,40 @@ KPM_Vector <T, 3u>::~KPM_Vector(void) {
 
 
 template <typename T>
-void KPM_Vector <T, 3u>::initiate_vector(){  
+void KPM_Vector<T, 3u>::initiate_vector()
+{
   index = 0;
 
+  const value_type norm = 1.0 / std::sqrt(r.Sizet - r.SizetVacancies);
   // Check if the SEED variable is set to deterministic
   char *env;
   std::string seed("");
   env = getenv("SEED");
-  if(env != NULL) seed = std::string(env);
+  if (env != NULL)
+    seed = std::string(env);
 
-    
   // Set all numbers to ones
-  if(seed=="ones"){
-      Coordinates<std::size_t, 4> x(r.Ld);
-      for(std::size_t io = 0; io < r.Orb; io++)
-        for(std::size_t i2 = NGHOSTS; i2 < r.Ld[2] - NGHOSTS; i2++)
-          for(std::size_t i1 = NGHOSTS; i1 < r.Ld[1] - NGHOSTS; i1++)
-            for(std::size_t i0 = NGHOSTS; i0 < r.Ld[0] - NGHOSTS; i0++)
-              v(x.set({i0,i1,i2,io}).index, index) = 1.0/static_cast<value_type>(sqrt(value_type(r.Sizet - r.SizetVacancies)));
+  if (seed == "ones") {
+    Coordinates<std::size_t, 4> x(r.Ld);
+    for (std::size_t io = 0; io < r.Orb; io++)
+      for (std::size_t i2 = NGHOSTS; i2 < r.Ld[2] - NGHOSTS; i2++)
+        for (std::size_t i1 = NGHOSTS; i1 < r.Ld[1] - NGHOSTS; i1++)
+          for (std::size_t i0 = NGHOSTS; i0 < r.Ld[0] - NGHOSTS; i0++)
+            v(x.set({i0, i1, i2, io}).index, index) = norm;
 
-  // Proceed normally
+    // Proceed normally
   } else {
-      Coordinates<std::size_t, 4> x(r.Ld);
-      for(std::size_t io = 0; io < r.Orb; io++)
-        for(std::size_t i2 = NGHOSTS; i2 < r.Ld[2] - NGHOSTS; i2++)
-          for(std::size_t i1 = NGHOSTS; i1 < r.Ld[1] - NGHOSTS; i1++)
-            for(std::size_t i0 = NGHOSTS; i0 < r.Ld[0] - NGHOSTS; i0++)
-              v(x.set({i0,i1,i2,io}).index, index) = simul.rnd.init()/static_cast<value_type>(sqrt(value_type(r.Sizet - r.SizetVacancies)));
-  }
-  
-  // Set to zero the places where there are vacancies
-  for(unsigned i = 0; i < r.NStr; i++){
-      auto & vv = h.hV.position.at(i); 
-      for(unsigned j = 0; j < vv.size(); j++)
-        v(vv.at(j), index ) = 0. ;
+    Coordinates<std::size_t, 4> x(r.Ld);
+    for (std::size_t io = 0; io < r.Orb; io++)
+      for (std::size_t i2 = NGHOSTS; i2 < r.Ld[2] - NGHOSTS; i2++)
+        for (std::size_t i1 = NGHOSTS; i1 < r.Ld[1] - NGHOSTS; i1++)
+          for (std::size_t i0 = NGHOSTS; i0 < r.Ld[0] - NGHOSTS; i0++)
+            v(x.set({i0, i1, i2, io}).index, index) =
+              norm * simul.rnd.init();
   }
 
+  // Set to zero the places where there are vacancies
+  h.hV.erase_wavefunction(v.col(index));
   // Initiate the phases for the twisted boundary conditions
   initiate_phases();
 }
@@ -864,7 +861,8 @@ void KPM_Vector <T, 3>::build_site(unsigned long pos){
   
 #pragma omp barrier
   v.setZero();
-  v(thread_coords_gh.index,0) = T(correct_thread);
+  v(thread_coords_gh.index, 0) = T(correct_thread);
+  h.hV.erase_wavefunction(v.col(0));
 }
 
 

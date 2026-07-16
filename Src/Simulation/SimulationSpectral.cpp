@@ -118,6 +118,7 @@ void Simulation<T, D>::spectral(
 
       ket = bra;
       fft.inverse(ket);
+      h.hV.erase_wavefunction(ket);
       phi.v.col(0) = ket;
       phi.Exchange_Boundaries();
       ket.setZero();

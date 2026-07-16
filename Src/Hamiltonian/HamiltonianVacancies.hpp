@@ -20,6 +20,15 @@ struct Vacancy_Operator {
   void generate_disorder();
   void add_model(double p, std::vector <int> & orb, std::vector<int> & positions);
   void add_conflict_with_defect(std::size_t element, unsigned istride);
-  bool test_vacancy(Coordinates<std::size_t,D + 1> & Latt);
-  void test_field( T * phi0 );
+  bool test_vacancy(Coordinates<std::size_t, D + 1> &Latt);
+  void test_field(T *phi0);
+  template <typename Derived>
+  void erase_wavefunction(Derived &&v_)
+  {
+    for (const auto &pos : position) {
+      for (const auto &idx : pos) {
+        v_(idx) = 0.;
+      }
+    }
+  }
 };
