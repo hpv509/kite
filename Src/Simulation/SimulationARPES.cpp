@@ -60,7 +60,7 @@ void Simulation<T,D>::store_ARPES(Eigen::Array<T, -1, -1> *gamma){
 
 template <typename T,unsigned D>
 void Simulation<T,D>::ARPES(int NDisorder, int NMoments, Eigen::Array<double, -1, -1> & k_vectors, Eigen::Matrix<T, -1, 1> & weight){
-    typedef typename extract_value_type<T>::value_type value_type;
+    using value_type = typename extract_scalar<T>::type;
 
     Eigen::Matrix<T, 1, 2> tmp;
     int Nk_vectors = k_vectors.rows();

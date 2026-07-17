@@ -47,7 +47,7 @@ GlobalSimulation<T, D>::GlobalSimulation(char *name) : rglobal(name)
   file.close();
   omp_set_num_threads(rglobal.n_threads);
 
-  using value_type = typename extract_value_type<T>::value_type;
+  using value_type = typename extract_scalar<T>::type;
   GlobalFFT<value_type> global_fft;
   global_fft.allocate(rglobal.Sizet);
 

@@ -25,10 +25,8 @@ struct Vacancy_Operator {
   template <typename Derived>
   void erase_wavefunction(Derived &&v_)
   {
-    for (const auto &pos : position) {
-      for (const auto &idx : pos) {
+    for (const auto &pos : position)
+      for (const auto &idx : pos)
         v_(idx) = 0.;
-      }
-    }
   }
 };

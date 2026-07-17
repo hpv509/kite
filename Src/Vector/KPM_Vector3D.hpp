@@ -25,7 +25,7 @@ public:
   LatticeStructure<3u>               & r;
   Hamiltonian<T,3u>                  & h;
   //  Coordinates<std::size_t,4>           x;
-  typedef typename extract_value_type<T>::value_type value_type;
+  using value_type = typename extract_scalar<T>::type;
   T *Fact_Bnd[D][3]; //3 Modos [Salto Positivo, Não Salto, Salto Negativo]
   using KPM_VectorBasis<T,3>::simul;
   using KPM_VectorBasis<T,3>::index;

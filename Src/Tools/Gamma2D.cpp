@@ -48,7 +48,7 @@ void Simulation<T,D>::Gamma2D(int NRandomV, int NDisorder, std::vector<int> N_mo
   // This function calculates all the kinds of one-dimensional Gamma matrices
   // such as Tr[Tn]    Tr[v^xx Tn]     etc
 
-  typedef typename extract_value_type<T>::value_type value_type;
+  using value_type = typename extract_scalar<T>::type;
 
   int num_velocities = 0;
   for(int i = 0; i < int(indices.size()); i++)

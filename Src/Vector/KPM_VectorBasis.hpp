@@ -16,7 +16,7 @@ protected:
   Simulation<T,D> & simul;
   Hamiltonian<T,D>           & h;
 public:
-  typedef typename extract_value_type<T>::value_type value_type;
+  using value_type = typename extract_scalar<T>::type;
   using ComplexTraits<T>::assign_value;
   using ComplexTraits<T>::myconj;
   using ComplexTraits<T>::multEiphase;

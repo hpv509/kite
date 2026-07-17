@@ -21,7 +21,7 @@ public:
   KPMRandom <T>          rnd;
   char                 *name;
   LatticeStructure<D>    & r;
-  typedef typename extract_value_type<T>::value_type value_type;
+  using value_type = typename extract_scalar<T>::type;
   GLOBAL_VARIABLES <T>  & Global;
   double                  EnergyScale;
   Periodic_Operator<T,D>  hr;

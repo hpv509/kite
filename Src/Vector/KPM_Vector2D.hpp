@@ -26,7 +26,7 @@ private:
   T                       *phiM2;
   const std::size_t          std;
 public:
-  typedef typename extract_value_type<T>::value_type value_type;
+  using value_type = typename extract_scalar<T>::type;
   T *Fact_Bnd[D][3]; //3 Modos [Salto Positivo, Não Salto, Salto Negativo]
   using KPM_VectorBasis<T,2>::simul;
   using KPM_VectorBasis<T,2>::index;

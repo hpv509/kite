@@ -68,9 +68,9 @@ void Simulation<T,D>::Gamma3D(int NRandomV, int NDisorder, std::vector<int> N_mo
   // easy to use up enormous ammounts of memory. This is why the matrix is calculated
   // in blocks
   //
-    
-  typedef typename extract_value_type<T>::value_type value_type;
-    
+
+  using value_type = typename extract_scalar<T>::type;
+
   //  --------- INITIALIZATIONS --------------
     
   KPM_Vector<T,D> kpm0(1, *this);           // initial random vector

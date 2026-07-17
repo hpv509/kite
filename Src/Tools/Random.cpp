@@ -1,21 +1,14 @@
-/***********************************************************/
-/*                                                         */
-/*   Copyright (C) 2018-2022, M. Andelkovic, L. Covaci,    */
-/*  A. Ferreira, S. M. Joao, J. V. Lopes, T. G. Rappoport  */
-/*                                                         */
-/***********************************************************/
-
-#include "Generic.hpp"
-#include "ComplexTraits.hpp"
+#include <algorithm>
+#include <array>
 #include "Random.hpp"
 
-template <typename T>
+template <scalar T>
 KPMRandom<T>::KPMRandom(const unsigned seed_)
 {
   init_random(seed_);
 }
 
-template <typename T>
+template <scalar T>
 void KPMRandom<T>::init_random(const unsigned seed_)
 {
   if (seed_ > 0)
@@ -29,52 +22,36 @@ void KPMRandom<T>::init_random(const unsigned seed_)
   }
 }
 
-template <typename T>
-double KPMRandom<T>::get()
+template <scalar T>
+auto KPMRandom<T>::get() -> real
 {
   return dist(rng);
 }
-template <typename T>
-double KPMRandom<T>::uniform(double mean, double width)
+
+template <scalar T>
+auto KPMRandom<T>::uniform(const real mean, const real width) -> real
 {
-  // mean  : mean value
-  // width : root mean square deviation
-  return mean + sqrt(3.) * width * (2 * dist(rng) - 1);
+  return mean + std::sqrt(3.0) * width * (2 * dist(rng) - 1.0);
 }
-template <typename T>
-double KPMRandom<T>::gaussian(double mean, double width)
+
+template <scalar T>
+auto KPMRandom<T>::gaussian(const real mean, const real width) -> real
 {
-  // mean  : mean value
-  // width : root mean square deviation
   return mean + width * gauss(rng);
 }
 
-template <typename T>
-template <typename U>
-typename std::enable_if<is_tt<std::complex, U>::value, U>::type
-KPMRandom<T>::initA()
-{
-  return exp(T(0., value_type(2 * M_PI * dist(rng))));
-}
-
-template <typename T>
-template <typename U>
-typename std::enable_if<!is_tt<std::complex, U>::value, U>::type
-KPMRandom<T>::initA()
-{
-  return (2 * dist(rng) - 1.) * sqrt(3);
-}
-
-template <typename T>
+template <scalar T>
 T KPMRandom<T>::init()
 {
-  return initA<T>();
+  if constexpr (Complex<T>)
+    return std::exp(T(0.0, 2 * M_PI * dist(rng)));
+  else
+    return (2 * dist(rng) - 1.0) * std::sqrt(3.0);
 }
 
 template class KPMRandom<float>;
 template class KPMRandom<double>;
 template class KPMRandom<long double>;
-
 template class KPMRandom<std::complex<float>>;
 template class KPMRandom<std::complex<double>>;
 template class KPMRandom<std::complex<long double>>;

@@ -13,7 +13,7 @@ class Simulation : public ComplexTraits<T> {
 public:
   using ComplexTraits<T>::assign_value;
   using ComplexTraits<T>::myconj;
-  typedef typename extract_value_type<T>::value_type value_type;
+  using value_type = typename extract_scalar<T>::type;
   KPMRandom<T> rnd;
   std::vector<T> ghosts;
   LatticeStructure<D> r;
@@ -170,7 +170,11 @@ public:
     const std::vector<int> &
   );
   // Custom Rank Two - SS
-  void calc_custom_ss_two();
+  void calc_custom_ss_two()
+    requires Complex<T>;
+  void calc_custom_ss_two()
+    requires Real<T>
+  {};
   void custom_ss_two(
     const int,
     const int,
@@ -180,8 +184,10 @@ public:
     const std::vector<std::vector<std::string>> &,
     const std::vector<Eigen::Array<T, -1, 1>> &,
     const std::vector<Eigen::Matrix<std::complex<double>, -1, -1>> &
-  );
-  void store_custom_ss_two(const Eigen::Array<T, -1, -1> &, const unsigned);
+  )
+    requires Complex<T>;
+  void store_custom_ss_two(const Eigen::Array<T, -1, -1> &, const unsigned)
+    requires Complex<T>;
 
   void calc_custom_two_local();
   void custom_two_local(
@@ -198,19 +204,31 @@ public:
     const Eigen::Array<T, -1, -1> &
   );
   // LDoS
-  void calc_ldos();
-  void ldos(const int, const value_type, const value_type, const int);
-  void store_ldos(const Eigen::Array<value_type, -1, -1> &);
+  void calc_ldos()
+    requires Complex<T>;
+  void calc_ldos()
+    requires Real<T>
+  {};
+  void ldos(const int, const value_type, const value_type, const int)
+    requires Complex<T>;
+  void store_ldos(const Eigen::Array<value_type, -1, -1> &)
+    requires Complex<T>;
   // Spectral Function map
-  void calc_spectral(GlobalFFT<value_type> &);
+  void calc_spectral(GlobalFFT<value_type> &)
+    requires Complex<T>;
+  void calc_spectral(GlobalFFT<value_type> &)
+    requires Real<T>
+  {};
   void spectral(
     const unsigned,
     const value_type,
     const value_type,
     const unsigned,
     GlobalFFT<value_type> &
-  );
-  void store_spectral(const Eigen::Array<value_type, -1, -1> &);
+  )
+    requires Complex<T>;
+  void store_spectral(const Eigen::Array<value_type, -1, -1> &)
+    requires Complex<T>;
 
   // LCM
   void calc_lcm();
@@ -228,7 +246,11 @@ public:
   void store_st_lcm(const Eigen::Array<T, -1, -1> &);
 
   // Wave-Packet Time Evol
-  void calc_localized_wavepacket();
+  void calc_localized_wavepacket()
+    requires Complex<T>;
+  void calc_localized_wavepacket()
+    requires Real<T>
+  {};
   void localized_wavepacket(
     const value_type t,
     const unsigned measurements,
@@ -241,7 +263,8 @@ public:
     const Eigen::Array<std::size_t, -1, D + 1> &prop_coords,
     const std::size_t sample_start,
     const std::size_t sample_L
-  );
+  )
+    requires Complex<T>;
   void store_localized_wavepacket(
     const Eigen::Array<value_type, -1, -1> &spectral_moments,
     const Eigen::Array<value_type, -1, -1> &moments1,
@@ -251,7 +274,8 @@ public:
     const Eigen::Array<T, -1, -1> &propagator_amplitudes,
     const std::vector<std::pair<std::size_t, std::size_t>> &propagator_coords,
     const std::size_t num_global_probes
-  );
+  )
+    requires Complex<T>;
 };
 
 #endif

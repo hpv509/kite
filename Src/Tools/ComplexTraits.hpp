@@ -1,78 +1,36 @@
-/***********************************************************/
-/*                                                         */
-/*   Copyright (C) 2018-2022, M. Andelkovic, L. Covaci,    */
-/*  A. Ferreira, S. M. Joao, J. V. Lopes, T. G. Rappoport  */
-/*                                                         */
-/***********************************************************/
-
+#ifndef TRAITS_H_
+#define TRAITS_H_
 #include <complex>
-#include <type_traits>
-/*
-  Auxiliar code to define specialized methods in templated classes depending on the argument T is complex:
 
-  template <typename U = T>
-  typename std::enable_if<is_tt<std::complex, U>::value, U>::type aux_wr(unsigned long x ) {
-  CODE
-  }; 
-
-  or non-complex:
-   template <typename U = T>
-   typename std::enable_if<!is_tt<std::complex, U>::value, U>::type aux_wr(unsigned long x ) {
-    CODE
-  };
-  
-  Get the template argument of a complex:
-  typedef typename extract_value_type<T>::value_type value_type;
- */
-
-
-
-template <template <class...> class TT, class... Args>
-std::true_type is_tt_impl(TT<Args...>);
-template <template <class...> class TT>
-std::false_type is_tt_impl(...);
-
-template <template <class...> class TT, class T>
-using is_tt = decltype(is_tt_impl<TT>(std::declval<typename std::decay<T>::type>()));
-
-template<typename T>
-struct extract_value_type
-{
-  typedef T value_type;
+template <typename T>
+struct extract_scalar {
+  using type = T;
 };
 
-template<template<typename, typename ...> class X, typename T, typename ...Args>
-struct extract_value_type<X<T, Args...>>   //specialization                                                                                                        
-{
-  typedef T value_type;
+template <typename T>
+struct extract_scalar<std::complex<T>> {
+  using type = T;
 };
+
+template <typename T>
+concept Real = std::is_floating_point_v<T>;
+
+template <typename T>
+concept Complex = requires {
+  typename T::value_type;
+  requires std::floating_point<typename T::value_type>;
+};
+
+template <typename T>
+concept scalar = Real<T> || Complex<T>;
 
 template <typename T>
 class ComplexTraits {
 public:
-  template <typename U = T>
-  typename std::enable_if<!is_tt<std::complex, U>::value, U>::type assign_valueB(double, double );
-  template <typename U = T>
-  typename std::enable_if< is_tt<std::complex, U>::value, U>::type assign_valueB(double, double );
-  template <typename U = T>
-  typename std::enable_if<!is_tt<std::complex, U>::value, U>::type myconjB(T & x);
-  template <typename U = T>
-  typename std::enable_if< is_tt<std::complex, U>::value, U>::type myconjB(T & x);
-  template <typename U = T>
-  typename std::enable_if<is_tt<std::complex, U>::value, U>::type multEiphaseB(double phase);
-  template <typename U = T>
-  typename std::enable_if<!is_tt<std::complex, U>::value, U>::type multEiphaseB(double phase);
-  
-  // Define aux_wr for complex T 
-  template <typename U = T>
-  typename std::enable_if<is_tt<std::complex, U>::value, U>::type aux_wrB(std::size_t x );
-  
-  // Define aux_wr for non complex T 
-  template <typename U = T>
-  typename std::enable_if<!is_tt<std::complex, U>::value, U>::type aux_wrB(std::size_t x);
-  
-  T myconj(T & );
-  T assign_value(double, double);
-  T multEiphase(double);
-  T aux_wr(std::size_t );
+  T myconj(T &x);
+  T assign_value(double x, double y);
+  T multEiphase(double phase);
+  T aux_wr(std::size_t x);
 };
+
+#endif

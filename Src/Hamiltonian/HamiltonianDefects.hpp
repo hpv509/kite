@@ -7,7 +7,7 @@
 
 template <typename T,unsigned D>
 struct Defect_Operator: public ComplexTraits<T> {
-  typedef typename extract_value_type<T>::value_type value_type;
+  using value_type = typename extract_scalar<T>::type;
   using ComplexTraits<T>::multEiphase;
   double                                   p;                        // Concentration of defects
   unsigned                       NumberNodes;                        // Number of nodes in the deffect

@@ -1,46 +1,29 @@
-/***********************************************************/
-/*                                                         */
-/*   Copyright (C) 2018-2022, M. Andelkovic, L. Covaci,    */
-/*  A. Ferreira, S. M. Joao, J. V. Lopes, T. G. Rappoport  */
-/*                                                         */
-/***********************************************************/
+#ifndef MYHDF5_H_
+#define MYHDF5_H_
 
 template <typename T>
-class DataTypeFor
-{
+class DataTypeFor {
 public:
-  static  H5::DataType value;  
+  static H5::DataType value;
 };
 
-
+template <typename T>
+void get_hdf5(T *l, H5::H5File *file, char *name);
 
 template <typename T>
-typename std::enable_if< is_tt<std::complex, T>::value, void>::type get_hdf5(T *, H5::H5File *,  char *);
+void get_hdf5(T *l, H5::H5File *file, std::string &name);
+
+void my_get_hdf5(
+  std::vector<std::string> &v,
+  const H5::H5File &file,
+  const std::string &group
+);
 
 template <typename T>
-typename std::enable_if<!is_tt<std::complex, T>::value, void>::type get_hdf5(T *, H5::H5File *,  char *);
+void write_hdf5(
+  const Eigen::Array<T, -1, -1> &mu,
+  H5::H5File *file,
+  const std::string name
+);
 
-template <typename T>
-typename std::enable_if< is_tt<std::complex, T>::value, void>::type get_hdf5(T *, H5::H5File *,  std::string &);
-
-template <typename T>
-typename std::enable_if<!is_tt<std::complex, T>::value, void>::type get_hdf5(T *, H5::H5File *,  std::string &);
-
-void my_get_hdf5(std::vector<std::string> &, const H5::H5File &, const std::string &);
-
-template <typename T>
-typename std::enable_if<!is_tt<std::complex, T>::value, void>::type write_hdf5(const Eigen::Array<T, -1, -1 > & ,H5::H5File *, const std::string);
-
-template <typename T>
-typename std::enable_if<is_tt<std::complex, T>::value, void>::type write_hdf5(const Eigen::Array<T, -1, -1 > &, H5::H5File *, const std::string);
-
-
-
-
-
-
- 
-
-
-
-
+#endif

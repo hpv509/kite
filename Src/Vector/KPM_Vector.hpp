@@ -26,7 +26,7 @@ public:
   Hamiltonian<T,D>            & h;
   Coordinates<std::size_t,D+1>  x;
 
-  typedef typename extract_value_type<T>::value_type value_type;
+  using value_type = typename extract_scalar<T>::type;
   T  *Fact_Bnd[D][3]; // Factor to Multiply hoppings (TwsBoundaries)
   using KPM_VectorBasis<T,D>::simul;
   using KPM_VectorBasis<T,D>::index;

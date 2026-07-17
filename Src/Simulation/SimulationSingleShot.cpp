@@ -182,8 +182,8 @@ void Simulation<T,D>::singleshot(Eigen::Array<double, -1, 1> energies,
 
 
   // initialize the kpm vectors necessary for this calculation
-  typedef typename extract_value_type<T>::value_type value_type;
-	
+  using value_type = typename extract_scalar<T>::type;
+
   // initialize the conductivity array
 
 #if (SSPRINT == 0)

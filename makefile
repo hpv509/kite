@@ -22,7 +22,7 @@ CPPFLAGS := $(EIGEN_INC) \
 	-DCOMPILE_WAVEPACKET=0 \
 	$(HDF5_FLAGS)
 
-CXXFLAGS := -std=c++17 -O3 -fopenmp
+CXXFLAGS := -std=c++20 -O3 -fopenmp
 LDFLAGS  := -fopenmp $(HDF5_LIBS) $(FFT_LIBS)
 
 SRC_KITEX := $(shell find Src -name '*.cpp')

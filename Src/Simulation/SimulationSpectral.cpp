@@ -20,6 +20,7 @@ class KPM_Vector;
 
 template <typename T, unsigned D>
 void Simulation<T, D>::calc_spectral(GlobalFFT<value_type> &global_fft_)
+  requires Complex<T>
 {
   debug_message("Entered Simulation::calc_spectral\n");
 #pragma omp barrier
@@ -77,74 +78,74 @@ void Simulation<T, D>::spectral(
   const unsigned coef_id_,
   GlobalFFT<value_type> &global_fft_
 )
+  requires Complex<T>
 {
   debug_message("Entered ldos\n");
-  if constexpr (is_tt<std::complex, T>::value) {
-    value_type energy_scale;
+  value_type energy_scale;
 #pragma omp critical
-    {
-      H5::H5File file(name, H5F_ACC_RDONLY);
-      std::string tmp = "/EnergyScale";
-      get_hdf5<value_type>(&energy_scale, &file, tmp);
-      file.close();
-    }
-#pragma omp barrier
-    const value_type target = energy_ / energy_scale;
-    const value_type sigma = sigma_ / energy_scale;
-    const value_type size = r.Sizet - r.SizetVacancies;
-    const value_type factor =
-      (coef_id_) ? 1.0 : std::sqrt(8 * M_PI) * sigma / energy_scale;
-    const value_type fwhm = (coef_id_) ? sigma : std::sqrt(2) * sigma;
-    const Eigen::Array<value_type, -1, 1> coefs =
-      (coef_id_) ? Coefficients::build_window<value_type>(target, fwhm)
-                 : Coefficients::build_gaussian<value_type>(target, fwhm);
-
-    KPM_Vector<T, D> phi(2, *this);
-    Eigen::Array<T, -1, 1> ket(r.Sized);
-    Eigen::Array<T, -1, 1> bra(r.Sized);
-    Eigen::Array<value_type, -1, -1> results(r.Sized, 2);
-    results.setZero();
-    Eigen::Array<value_type, -1, 1> prv(r.Sized);
-    FFT<value_type, D> fft(r, global_fft_);
-
-    h.generate_disorder();
-    for (int vec = 0; vec < vectors_; ++vec) {
-      h.generate_twists();
-      phi.initiate_phases();
-      phi.set_index(0);
-      phi.initiate_vector();
-      phi.v.col(0) *= std::sqrt(size);
-      bra = phi.v.col(0);
-
-      ket = bra;
-      fft.inverse(ket);
-      h.hV.erase_wavefunction(ket);
-      phi.v.col(0) = ket;
-      phi.Exchange_Boundaries();
-      ket.setZero();
-      for (unsigned n = 0, N = coefs.size(); n < N; ++n) {
-        phi.cheb_iteration(n);
-        ket += coefs(n) * phi.v.col(phi.get_index()).array();
-      }
-      fft.forward(ket);
-      const value_type weight = 1.0 / (vec + 1);
-      const Eigen::Array<value_type, -1, 1> map =
-        factor * (bra.conjugate() * ket).abs2();
-
-      prv = results.col(0);
-      results.col(0) += weight * (map - results.col(0));
-      results.col(1) +=
-        weight * ((map - prv) * (map - results.col(0)) - results.col(1));
-    }
-    results.col(1) = results.col(1).sqrt() / std::sqrt(vectors_);
-    store_spectral(results);
+  {
+    H5::H5File file(name, H5F_ACC_RDONLY);
+    std::string tmp = "/EnergyScale";
+    get_hdf5<value_type>(&energy_scale, &file, tmp);
+    file.close();
   }
+#pragma omp barrier
+  const value_type target = energy_ / energy_scale;
+  const value_type sigma = sigma_ / energy_scale;
+  const value_type size = r.Sizet - r.SizetVacancies;
+  const value_type factor =
+    (coef_id_) ? 1.0 : std::sqrt(8 * M_PI) * sigma / energy_scale;
+  const value_type fwhm = (coef_id_) ? sigma : std::sqrt(2) * sigma;
+  const Eigen::Array<value_type, -1, 1> coefs =
+    (coef_id_) ? Coefficients::build_window<value_type>(target, fwhm)
+               : Coefficients::build_gaussian<value_type>(target, fwhm);
+
+  KPM_Vector<T, D> phi(2, *this);
+  Eigen::Array<T, -1, 1> ket(r.Sized);
+  Eigen::Array<T, -1, 1> bra(r.Sized);
+  Eigen::Array<value_type, -1, -1> results(r.Sized, 2);
+  results.setZero();
+  Eigen::Array<value_type, -1, 1> prv(r.Sized);
+  FFT<value_type, D> fft(r, global_fft_);
+
+  h.generate_disorder();
+  for (int vec = 0; vec < vectors_; ++vec) {
+    h.generate_twists();
+    phi.initiate_phases();
+    phi.set_index(0);
+    phi.initiate_vector();
+    phi.v.col(0) *= std::sqrt(size);
+    bra = phi.v.col(0);
+
+    ket = bra;
+    fft.inverse(ket);
+    h.hV.erase_wavefunction(ket);
+    phi.v.col(0) = ket;
+    phi.Exchange_Boundaries();
+    ket.setZero();
+    for (unsigned n = 0, N = coefs.size(); n < N; ++n) {
+      phi.cheb_iteration(n);
+      ket += coefs(n) * phi.v.col(phi.get_index()).array();
+    }
+    fft.forward(ket);
+    const value_type weight = 1.0 / (vec + 1);
+    const Eigen::Array<value_type, -1, 1> map =
+      factor * (bra.conjugate() * ket).abs2();
+
+    prv = results.col(0);
+    results.col(0) += weight * (map - results.col(0));
+    results.col(1) +=
+      weight * ((map - prv) * (map - results.col(0)) - results.col(1));
+  }
+  results.col(1) = results.col(1).sqrt() / std::sqrt(vectors_);
+  store_spectral(results);
 }
 
 template <typename T, unsigned D>
 void Simulation<T, D>::store_spectral(
   const Eigen::Array<value_type, -1, -1> &results_
 )
+  requires Complex<T>
 {
   debug_message("Entered store_spectral\n");
   Coordinates<std::size_t, D + 1> global(r.Lt);

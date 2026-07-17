@@ -55,7 +55,7 @@ template <typename T,unsigned D>
 void Simulation<T,D>::LMU(int NDisorder, int NMoments, Eigen::Array<unsigned long, -1, 1> positions){
     debug_message("Entered Simulation::MU\n");
 
-    typedef typename extract_value_type<T>::value_type value_type;
+    using value_type = typename extract_scalar<T>::type;
     Eigen::Matrix<T, 1, 2> tmp;
     int NPositions = positions.size();
     unsigned long pos;
