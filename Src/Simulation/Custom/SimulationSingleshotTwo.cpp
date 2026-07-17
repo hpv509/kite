@@ -162,15 +162,14 @@ void Simulation<T, D>::custom_ss_two(
     coefs[1].col(count) = gauss_tmp;
     ++count;
   }
-  std::array<Eigen::Array<T, -1, 1>, 2> ket =
-    {Eigen::Array<T, -1, 1>(r.Sized), Eigen::Array<T, -1, 1>(r.Sized)};
   Eigen::Array<T, -1, 1> bra(r.Sized);
   Eigen::Array<T, -1, 1> psi(r.Sized);
   Eigen::Array<T, -1, 1> result(num_en);
   result.setZero();
-  std::array<KPM_Vector<T, D>, 2> vecs =
-    {KPM_Vector<T, D>(1, *this), KPM_Vector<T, D>(2, *this)};
-  std::array<KPM_Vector<T, D> *, 2> ptrs = {&vecs[0], &vecs[1]};
+  std::array ket =
+    {Eigen::Array<T, -1, 1>(r.Sized), Eigen::Array<T, -1, 1>(r.Sized)};
+  std::array vecs = {KPM_Vector<T, D>(1, *this), KPM_Vector<T, D>(2, *this)};
+  std::array ptrs = {&vecs[0], &vecs[1]};
 
   unsigned average = 0;
   for (int disorder = 0; disorder < samples_; ++disorder) {

@@ -1,12 +1,12 @@
 #ifndef GLOBAL_FFT_H_
 #define GLOBAL_FFT_H_
-#include <complex>
+#include "ComplexTraits.hpp"
 
-template <typename T>
+template <Real T>
 struct GlobalFFT {
-  std::complex<T> *in = nullptr;
-  std::complex<T> *out = nullptr;
-
+  using cplx = std::complex<T>;
+  cplx *in = nullptr;
+  cplx *out = nullptr;
   GlobalFFT() = default;
   ~GlobalFFT();
   void allocate(const std::size_t total_size);

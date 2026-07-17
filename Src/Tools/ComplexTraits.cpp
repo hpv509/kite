@@ -13,18 +13,18 @@ T ComplexTraits<T>::assign_value(double x, double y)
 template <typename T>
 T ComplexTraits<T>::myconj(T &x)
 {
-  if constexpr (Complex<T>) {
+  if constexpr (Complex<T>)
     return std::conj(x);
-  } else
+  else
     return x;
 }
 
 template <typename T>
 T ComplexTraits<T>::multEiphase(double phase)
 {
-  if constexpr (Complex<T>) {
-    return static_cast<T>(std::exp(std::complex<double>(0.0, phase)));
-  } else
+  if constexpr (Complex<T>)
+    return std::exp(T(0.0, phase));
+  else
     return static_cast<T>(1.0);
 }
 

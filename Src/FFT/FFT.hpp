@@ -9,11 +9,12 @@
 #include "GlobalFFT.hpp"
 #include "TraitsFFTW.hpp"
 
-template <typename T, unsigned D>
+template <Real T, unsigned D>
 struct FFT {
   LatticeStructure<D> &r;
   GlobalFFT<T> &global_fft;
   const Eigen::Matrix<T, D, D> b_rcp;
+  using cplx = std::complex<T>;
   typename FFTWTraits<T>::cplx *global_in;
   typename FFTWTraits<T>::cplx *global_out;
   typename FFTWTraits<T>::plan fwd_plan;
@@ -21,8 +22,8 @@ struct FFT {
 
   FFT(LatticeStructure<D> &, GlobalFFT<T> &);
   ~FFT();
-  void forward(Eigen::Array<std::complex<T>, -1, 1> &);
-  void inverse(Eigen::Array<std::complex<T>, -1, 1> &);
+  void forward(Eigen::Array<cplx, -1, 1> &);
+  void inverse(Eigen::Array<cplx, -1, 1> &);
 };
 
 #endif

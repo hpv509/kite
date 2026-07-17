@@ -1,17 +1,16 @@
 #include "GlobalFFT.hpp"
 #include "TraitsFFTW.hpp"
 
-template <typename T>
+template <Real T>
 void GlobalFFT<T>::allocate(const std::size_t total_size)
 {
-  using cplx = std::complex<T>;
   if (!in) {
     in = reinterpret_cast<cplx *>(fftw_malloc(sizeof(cplx) * total_size));
     out = reinterpret_cast<cplx *>(fftw_malloc(sizeof(cplx) * total_size));
   }
 }
 
-template <typename T>
+template <Real T>
 GlobalFFT<T>::~GlobalFFT()
 {
   if (in)

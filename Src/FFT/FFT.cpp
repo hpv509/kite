@@ -1,7 +1,7 @@
 #include "FFT.hpp"
 #include "Loop.hpp"
 
-template <typename T, unsigned D>
+template <Real T, unsigned D>
 FFT<T, D>::FFT(LatticeStructure<D> &r_, GlobalFFT<T> &global_fft_) :
   r(r_),
   global_fft(global_fft_),
@@ -31,7 +31,7 @@ FFT<T, D>::FFT(LatticeStructure<D> &r_, GlobalFFT<T> &global_fft_) :
 #pragma omp barrier
 }
 
-template <typename T, unsigned D>
+template <Real T, unsigned D>
 FFT<T, D>::~FFT(void)
 {
 #pragma omp critical
@@ -44,10 +44,9 @@ FFT<T, D>::~FFT(void)
 #pragma omp barrier
 }
 
-template <typename T, unsigned D>
-void FFT<T, D>::forward(Eigen::Array<std::complex<T>, -1, 1> &v_)
+template <Real T, unsigned D>
+void FFT<T, D>::forward(Eigen::Array<cplx, -1, 1> &v_)
 {
-  using cplx = std::complex<T>;
   Coordinates<std::size_t, D + 1> local(r.Ld);
   Coordinates<std::size_t, D + 1> global(r.Lt);
   cplx *vec_in = reinterpret_cast<cplx *>(global_in);
@@ -101,8 +100,8 @@ void FFT<T, D>::forward(Eigen::Array<std::complex<T>, -1, 1> &v_)
 #pragma omp barrier
 }
 
-template <typename T, unsigned D>
-void FFT<T, D>::inverse(Eigen::Array<std::complex<T>, -1, 1> &v_)
+template <Real T, unsigned D>
+void FFT<T, D>::inverse(Eigen::Array<cplx, -1, 1> &v_)
 {
   Coordinates<std::size_t, D + 1> local(r.Ld);
   Coordinates<std::size_t, D + 1> global(r.Lt);
