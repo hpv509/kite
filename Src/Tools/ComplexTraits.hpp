@@ -22,7 +22,7 @@ concept Complex = requires {
 };
 
 template <typename T>
-concept scalar = Real<T> || Complex<T>;
+concept Scalar = Real<T> || Complex<T>;
 
 template <typename T>
 class ComplexTraits {

@@ -760,75 +760,121 @@ void KPM_Vector<T, 3>::mult_position(
 }
 
 template <typename T>
+template <int S> // S = -1: partition -> lattice, S = 1: lattice -> partition
+void KPM_Vector<T, 3>::pairing(const T gamma_, const unsigned p_)
+  requires Complex<T>
+{
+  constexpr value_type norm = 1 / std::sqrt(2);
+  const unsigned half_orb = r.Orb / 2;
+  const T gd = static_cast<T>(S) * gamma_;
+  const T gc = std::conj(gd);
+  Coordinates<std::size_t, 4> local(r.Ld);
+  for (unsigned io = 0; io < half_orb; ++io) {
+    const unsigned offset = half_orb * r.Nd;
+    for (unsigned i2 = NGHOSTS, I2 = r.Ld[2] - NGHOSTS; i2 < I2; ++i2) {
+      local.set({NGHOSTS, NGHOSTS, i2, io});
+      unsigned pair_0 = local.index;
+      unsigned pair_1 = pair_0 + offset;
+      for (unsigned i1 = 0, I1 = r.ld[1]; i1 < I1; ++i1) {
+        pair_0 += r.Ld[0];
+        pair_1 += r.Ld[0];
+        for (std::size_t i0 = 0, I0 = r.ld[0]; i0 < I0; ++i0) {
+          const T tmp_1 = phi0[pair_0] + gc * phi0[pair_1];
+          const T tmp_2 = -gd * phi0[pair_0] + phi0[pair_1];
+          phi0[pair_0] = norm * tmp_1;
+          phi0[pair_1] = norm * tmp_2;
+          ++pair_0;
+          ++pair_1;
+        }
+      }
+    }
+  }
+#pragma omp barrier
+}
+
+template <typename T>
+template <unsigned MULT>
+void KPM_Vector<T, 3>::mult_bdg_terms(
+  const std::size_t cell_idx_,
+  const std::size_t b2_
+)
+{
+}
+
+template <typename T>
 template <unsigned MULT, bool VELOCITY>
-void KPM_Vector <T, 3>::KPM_MOTOR(KPM_Vector<T,3> *kpm_final, unsigned axis)
+void KPM_Vector<T, 3>::KPM_MOTOR(KPM_Vector<T, 3> *kpm_final, unsigned axis)
 {
   std::size_t i0, i1, i2;
   Coordinates<std::size_t, D + 1> x(r.Ld);
   phi0 = kpm_final->v.col(kpm_final->index).data();
-  phiM1 = v.col( (memory - 1 + index) % memory ).data();
-  phiM2 = v.col( (memory - 2 + index) % memory ).data();
-  
+  phiM1 = v.col((memory - 1 + index) % memory).data();
+  phiM2 = v.col((memory - 2 + index) % memory).data();
+
   // Initialize tiles that have deffects connecting elements of a previous tile
-  for(auto istr = h.cross_mozaic_indexes.begin(); istr != h.cross_mozaic_indexes.end() ; istr++)
+  for (auto istr = h.cross_mozaic_indexes.begin();
+       istr != h.cross_mozaic_indexes.end(); istr++)
     initiate_stride<MULT>(*istr);
-  
+
   // Iterate over tiles first
-  for( i2 = NGHOSTS; i2 < r.Ld[2] - NGHOSTS; i2 += TILE  ){
-      build_regular_phases<MULT,VELOCITY>(i2, axis);
-      for( i1 = NGHOSTS; i1 < r.Ld[1] - NGHOSTS; i1 += TILE  )
-        for( i0 = NGHOSTS; i0 < r.Ld[0] - NGHOSTS; i0 += TILE ){
-            
-            std::size_t istr = ((i2 - NGHOSTS) / TILE * r.lStr[1] + (i1 - NGHOSTS) / TILE) * r.lStr[0] + (i0 - NGHOSTS) / TILE;
-            if(h.cross_mozaic.at(istr))
-              initiate_stride<MULT>(istr);
+  for (i2 = NGHOSTS; i2 < r.Ld[2] - NGHOSTS; i2 += TILE) {
+    build_regular_phases<MULT, VELOCITY>(i2, axis);
+    for (i1 = NGHOSTS; i1 < r.Ld[1] - NGHOSTS; i1 += TILE)
+      for (i0 = NGHOSTS; i0 < r.Ld[0] - NGHOSTS; i0 += TILE) {
 
-            // Iterate over the orbitals
-            for(std::size_t io = 0; io < r.Orb; io++){
-                const std::size_t ip = io * x.basis[3];
-                const std::size_t j0 = ip + i0 + i1 * tile[1] + i2 * tile[2];
-		
-                // Local Energy
-                if(!VELOCITY) mult_local_disorder<MULT>(j0, io);
-		
-                // Hoppings
-                mult_regular_hoppings(j0, io);
-             }
-            
-            KPM_VectorBasis<T,3u>::template multiply_defect<MULT, VELOCITY>(istr, phi0, phiM1, axis);
-            
-            // Empty the vacancies in the tile
-            auto & hV = h.hV.position.at(istr);
-            for(auto k = hV.begin(); k != hV.end(); k++)
-              phi0[*k] = 0.;
+        std::size_t istr =
+          ((i2 - NGHOSTS) / TILE * r.lStr[1] + (i1 - NGHOSTS) / TILE) *
+            r.lStr[0] +
+          (i0 - NGHOSTS) / TILE;
+        if (h.cross_mozaic.at(istr))
+          initiate_stride<MULT>(istr);
 
+        // Iterate over the orbitals
+        for (std::size_t io = 0; io < r.Orb; io++) {
+          const std::size_t ip = io * x.basis[3];
+          const std::size_t j0 = ip + i0 + i1 * tile[1] + i2 * tile[2];
+
+          // Local Energy
+          if (!VELOCITY)
+            mult_local_disorder<MULT>(j0, io);
+
+          // Hoppings
+          mult_regular_hoppings(j0, io);
         }
-    }
+        KPM_VectorBasis<T, 3u>::template multiply_defect<
+          MULT, VELOCITY>(istr, phi0, phiM1, axis);
 
-  for(auto vc =  h.hV.vacancies_with_defects.begin(); vc != h.hV.vacancies_with_defects.end(); vc++)
+        // Empty the vacancies in the tile
+        auto &hV = h.hV.position.at(istr);
+        for (auto k = hV.begin(); k != hV.end(); k++)
+          phi0[*k] = 0.;
+      }
+  }
+
+  for (auto vc = h.hV.vacancies_with_defects.begin();
+       vc != h.hV.vacancies_with_defects.end(); vc++)
     phi0[*vc] = 0.;
-    
-  /* 
+
+  /*
      Broken Imputirities:
-     The bulk domain will receive contributions from the broken defects 
+     The bulk domain will receive contributions from the broken defects
      located on the neighbour domains.
-     We already subtract the vacancies from these contributions 
+     We already subtract the vacancies from these contributions
   */
 
-  for(auto id = h.hd.begin(); id != h.hd.end(); id++)
-    id->template multiply_broken_defect<MULT,VELOCITY>(phi0, phiM1,axis);
-	  
-  // These four lines pertrain only to the magnetic field
-  kpm_final -> Exchange_Boundaries();
+  for (auto id = h.hd.begin(); id != h.hd.end(); id++)
+    id->template multiply_broken_defect<MULT, VELOCITY>(phi0, phiM1, axis);
 
+  // These four lines pertrain only to the magnetic field
+  kpm_final->Exchange_Boundaries();
 }
 
-
 template <typename T>
-void KPM_Vector <T, 3>::build_site(unsigned long pos){
+void KPM_Vector<T, 3>::build_site(unsigned long pos)
+{
   // Builds an initial vector which is zero everywhere except
   // for a single site, where it is one
-  
+
   Coordinates<unsigned long, D + 1> thread_coords(r.ld);
   Coordinates<unsigned long, D + 1> thread_coords_gh(r.Ld);
   Coordinates<unsigned long, D + 1> thread(r.nd);
@@ -836,94 +882,112 @@ void KPM_Vector <T, 3>::build_site(unsigned long pos){
   bool correct_thread;
   unsigned long T_thread[D + 1]; // index of the thread
   unsigned long x_thread[D + 1]; // position within the thread
-  
+
   index = 0;
 #pragma omp critical
   {
     total_coords.set_coord(pos);
-    for(unsigned d = 0; d < D; d++)
-      {
-	T_thread[d] = total_coords.coord[d]/r.ld[d];
-	x_thread[d] = total_coords.coord[d]%r.ld[d];
-      }
+    for (unsigned d = 0; d < D; d++) {
+      T_thread[d] = total_coords.coord[d] / r.ld[d];
+      x_thread[d] = total_coords.coord[d] % r.ld[d];
+    }
     T_thread[D] = 0;
     x_thread[D] = total_coords.coord[D];
     thread_coords.set_index(x_thread);
     thread.set_index(T_thread);
 
     //convert to coordinates with ghosts
-    r.convertCoordinates(thread_coords_gh, thread_coords); 
+    r.convertCoordinates(thread_coords_gh, thread_coords);
 
     // check if the site is in the current thread
     correct_thread = thread.index == r.thread_id;
-
   }
-  
+
 #pragma omp barrier
   v.setZero();
   v(thread_coords_gh.index, 0) = T(correct_thread);
   h.hV.erase_wavefunction(v.col(0));
 }
 
-
 template <typename T>
-void KPM_Vector <T, 3>::build_planewave(Eigen::Matrix<double,-1,1> & k, Eigen::Matrix<T,-1,1> & weight){
-  
-    // Builds an initial vector which is a plane wave with a specific value of k
-    // weight is the weight of each orbital for this plane wave 
-    // |k> = sum_{r,R} w(R) exp(i k.r + i k.R) |r,R>
-    // r = lattice vector
-    // R = orbital vector
-    // w = weight (only depends on orbital)
+void KPM_Vector<T, 3>::build_planewave(
+  Eigen::Matrix<double, -1, 1> &k,
+  Eigen::Matrix<T, -1, 1> &weight
+)
+{
 
-    if(weight.rows() != r.Orb)
-        std::cout << "Warning in build_planewave: the weight matrix must have the same number"
-            " of elements as the number of orbitals.";
+  // Builds an initial vector which is a plane wave with a specific value of k
+  // weight is the weight of each orbital for this plane wave
+  // |k> = sum_{r,R} w(R) exp(i k.r + i k.R) |r,R>
+  // r = lattice vector
+  // R = orbital vector
+  // w = weight (only depends on orbital)
 
+  if (weight.rows() != r.Orb)
+    std::cout << "Warning in build_planewave: the weight matrix must have the "
+                 "same number"
+                 " of elements as the number of orbitals.";
 
-    index = 0;    // sets the KPM index to 0
-    Coordinates<std::size_t, D + 1> local_coords(r.Ld), global_coords(r.Lt);
+  index = 0; // sets the KPM index to 0
+  Coordinates<std::size_t, D + 1> local_coords(r.Ld), global_coords(r.Lt);
 
-    Eigen::Map<Eigen::Matrix<std::size_t, 3, 1>> position(global_coords.coord); // spacial part of the coord vector in global_coords
-    auto orb_a_coords = r.rLat.inverse() * r.rOrb;          // column i is the position of the i-th orbital in basis a
-                                                            // r.rLat.inverse() each row is a bi / 2*M_PI 
-    Eigen::Array<T, -1, 1> exp_R;
-    exp_R = Eigen::Array<T, -1, 1>::Zero(r.Orb, 1);   // exponential related to the orbital
-    T exp_r;                                                // exponential related to the lattice site
+  Eigen::Map<Eigen::Matrix<std::size_t, 3, 1>> position(
+    global_coords.coord
+  ); // spacial part of the coord vector in global_coords
+  auto orb_a_coords =
+    r.rLat.inverse() *
+    r.rOrb; // column i is the position of the i-th orbital in basis a
+            // r.rLat.inverse() each row is a bi / 2*M_PI
+  Eigen::Array<T, -1, 1> exp_R;
+  exp_R = Eigen::Array<
+    T, -1, 1>::Zero(r.Orb, 1); // exponential related to the orbital
+  T exp_r;                     // exponential related to the lattice site
 
-    // Calculate the exponential related to the orbital exp(i k R) w(R)
-    // It is already divided by the norm, which is the number of total sites r.Nt
-    for(std::size_t io = 0; io < r.Orb; io++)
-        exp_R(io) = weight(io)*exp(assign_value(0, 2.0*M_PI*orb_a_coords.col(io).transpose()*k))/T(sqrt(r.Nt));
+  // Calculate the exponential related to the orbital exp(i k R) w(R)
+  // It is already divided by the norm, which is the number of total sites r.Nt
+  for (std::size_t io = 0; io < r.Orb; io++)
+    exp_R(io) =
+      weight(io) *
+      exp(assign_value(0, 2.0 * M_PI * orb_a_coords.col(io).transpose() * k)) /
+      T(sqrt(r.Nt));
 
+  // Calculate the exponential related to each unit cell
+  for (std::size_t i2 = NGHOSTS; i2 < r.Ld[2] - NGHOSTS; i2++)
+    for (std::size_t i1 = NGHOSTS; i1 < r.Ld[1] - NGHOSTS; i1++)
+      for (std::size_t i0 = NGHOSTS; i0 < r.Ld[0] - NGHOSTS; i0++) {
+        local_coords.set({i0, i1, i2, std::size_t(0)});
+        r.convertCoordinates(
+          global_coords, local_coords
+        ); // Converts the coordinates within a thread to global coordinates
 
-    // Calculate the exponential related to each unit cell
-    for(std::size_t i2 = NGHOSTS; i2 < r.Ld[2] - NGHOSTS; i2++)
-      for(std::size_t i1 = NGHOSTS; i1 < r.Ld[1] - NGHOSTS; i1++)
-        for(std::size_t i0 = NGHOSTS; i0 < r.Ld[0] - NGHOSTS; i0++)
-          {
-            local_coords.set({i0,i1,i2, std::size_t(0)});
-            r.convertCoordinates(global_coords, local_coords);          // Converts the coordinates within a thread to global coordinates
-            
-            exp_r = exp(assign_value(0,  2.0*M_PI * position.cast<double>().transpose()*k ));
-            
-            for(std::size_t io = 0; io < r.Orb; io++) {
-                local_coords.set({i0,i1,i2,io});
-                v(local_coords.index, 0) = exp_r*exp_R(io);
-              }
-          }
-    KPM_VectorBasis<T,3u>::build_defect_planewave(k, weight);
+        exp_r = exp(
+          assign_value(0, 2.0 * M_PI * position.cast<double>().transpose() * k)
+        );
+
+        for (std::size_t io = 0; io < r.Orb; io++) {
+          local_coords.set({i0, i1, i2, io});
+          v(local_coords.index, 0) = exp_r * exp_R(io);
+        }
+      }
+  KPM_VectorBasis<T, 3u>::build_defect_planewave(k, weight);
 }
 
+#define instantiateTYPE(type)                                                  \
+  template class KPM_Vector<type, 3u>;                                         \
+  template void KPM_Vector<type, 3u>::template KPM_MOTOR<                      \
+    0u, false>(KPM_Vector<type, 3u> * kpm_final, unsigned axis);               \
+  template void KPM_Vector<type, 3u>::template KPM_MOTOR<                      \
+    1u, false>(KPM_Vector<type, 3u> * kpm_final, unsigned axis);               \
+  template void KPM_Vector<type, 3u>::template KPM_MOTOR<                      \
+    0u, true>(KPM_Vector<type, 3u> * kpm_final, unsigned axis);                \
+  template void KPM_Vector<type, 3u>::template pairing<                        \
+    -1>(const type gamma_, const unsigned p_);                                 \
+  template void KPM_Vector<type, 3u>::template pairing<                        \
+    1>(const type gamma_, const unsigned p_);
 
-#define instantiateTYPE(type)               template class KPM_Vector <type,3u>; \
-  template void KPM_Vector<type,3u>::template KPM_MOTOR<0u,false>(KPM_Vector<type,3u> * kpm_final, unsigned axis); \
-  template void KPM_Vector<type,3u>::template KPM_MOTOR<1u,false>(KPM_Vector<type,3u> * kpm_final, unsigned axis); \
-  template void KPM_Vector<type,3u>::template KPM_MOTOR<0u,true>(KPM_Vector<type,3u> * kpm_final, unsigned axis);
-
-instantiateTYPE(float)
-instantiateTYPE(double)
-instantiateTYPE(long double)
-instantiateTYPE(std::complex<float>)
-instantiateTYPE(std::complex<double>)
-instantiateTYPE(std::complex<long double>)
+instantiateTYPE(float);
+instantiateTYPE(double);
+instantiateTYPE(long double);
+instantiateTYPE(std::complex<float>);
+instantiateTYPE(std::complex<double>);
+instantiateTYPE(std::complex<long double>);

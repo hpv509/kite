@@ -30,7 +30,8 @@ Hamiltonian<T, D>::Hamiltonian(
   Global(gg),
   hr(name, r),
   cross_mozaic(r.NStr),
-  hV(name, rr, rnd)
+  hV(name, rr, rnd),
+  bdg(1)
 {
 #pragma omp critical
   {

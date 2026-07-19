@@ -8,7 +8,7 @@
 #include <random>
 #include "ComplexTraits.hpp"
 
-template <scalar T>
+template <Scalar T>
 class KPMRandom {
   std::mt19937 rng;
   std::uniform_real_distribution<double> dist;

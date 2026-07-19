@@ -527,278 +527,337 @@ void KPM_Vector<T, 2>::mult_position(
 }
 
 template <typename T>
-template <unsigned MULT, bool VELOCITY>
-void KPM_Vector <T, 2>::KPM_MOTOR(KPM_Vector<T,2> *kpm_final, unsigned axis)
+template <int S> // S = -1: partition -> lattice, S = 1: lattice -> partition
+void KPM_Vector<T, 2>::pairing(const T gamma_, const unsigned p_)
+  requires Complex<T>
 {
-  std::size_t i0, i1;    
-  phi0 = kpm_final->v.col(kpm_final->index).data();
-  phiM1 = v.col( (memory - 1 + index) % memory ).data();
-  phiM2 = v.col( (memory - 2 + index) % memory ).data();
-    
-  // Initialize tiles that have deffects connecting elements of a previous tile
-  for(auto istr = h.cross_mozaic_indexes.begin(); istr != h.cross_mozaic_indexes.end() ; istr++)
-    initiate_stride<MULT>(*istr);
-    
-  for( i1 = NGHOSTS; i1 < r.Ld[1] - NGHOSTS; i1 += TILE  ){
-      build_regular_phases<MULT,VELOCITY>(i1, axis);
-		
-      for( i0 = NGHOSTS; i0 < r.Ld[0] - NGHOSTS; i0 += TILE ){
-		    
-          std::size_t istr = (i1 - NGHOSTS) / TILE * r.lStr[0] + (i0 - NGHOSTS) / TILE;
-          if(h.cross_mozaic.at(istr))
-            initiate_stride<MULT>(istr);
-          // These four lines pertrain only to the magnetic field
-          for(std::size_t io = 0; io < r.Orb; io++)
-            {
-              const std::size_t ip = io * x.basis[2];
-              const std::size_t j0 = ip + i0 + i1 * std;
-		
-              // Local Energy
-              if(!VELOCITY) mult_local_disorder<MULT>(j0, io);
-		
-              // Hoppings
-              mult_regular_hoppings(j0, io);
-            }
-
-          KPM_VectorBasis<T,2u>::template multiply_defect<MULT, VELOCITY>(istr, phi0, phiM1, axis);
-	  	    
-          // Empty the vacancies in the tile
-          auto & hV = h.hV.position.at(istr);
-          for(auto k = hV.begin(); k != hV.end(); k++)
-            phi0[*k] = 0.;
-
-        }
+  constexpr value_type norm = 1 / std::sqrt(2);
+  const unsigned half_orb = r.Orb / 2;
+  const T gd = static_cast<T>(S) * gamma_;
+  const T gc = std::conj(gd);
+  Coordinates<std::size_t, 3> local(r.Ld);
+  for (unsigned io = 0; io < half_orb; ++io) {
+    const unsigned offset = half_orb * r.Nd;
+    for (unsigned i1 = NGHOSTS, I1 = r.Ld[1] - NGHOSTS; i1 < I1; ++i1) {
+      local.set({NGHOSTS, i1, io});
+      unsigned pair_0 = local.index;
+      unsigned pair_1 = pair_0 + offset;
+      for (std::size_t i0 = 0, I0 = r.ld[0]; i0 < I0; ++i0) {
+        const T tmp_1 = phi0[pair_0] + gc * phi0[pair_1];
+        const T tmp_2 = -gd * phi0[pair_0] + phi0[pair_1];
+        phi0[pair_0] = norm * tmp_1;
+        phi0[pair_1] = norm * tmp_2;
+        ++pair_0;
+        ++pair_1;
+      }
     }
+  }
+#pragma omp barrier
+}
 
-  for(auto vc =  h.hV.vacancies_with_defects.begin(); vc != h.hV.vacancies_with_defects.end(); vc++)
+template <typename T>
+template <unsigned MULT>
+void KPM_Vector<T, 2>::mult_bdg_terms(
+  const std::size_t cell_idx_,
+  const std::size_t b2_
+)
+{
+  constexpr value_type order = MULT + 1;
+  const std::size_t offset = r.Orb * b2_ / 2;
+  for (std::size_t j = cell_idx_, J = cell_idx_ + TILE * std; j < J; j += std) {
+    for (std::size_t i = j; i < j + TILE; ++i) {
+      std::size_t idx_e = i;
+      std::size_t idx_h = idx_e + offset;
+      for (std::size_t io = 0, Io = r.Orb / 2; io < Io; ++io) {
+        const T ht = h.bdg.hartree(idx_e);
+        const T sd = h.bdg.s_delta(idx_e);
+        const T tmp_e = phiM1[idx_e] * ht + phiM1[idx_h] * sd;
+        const T tmp_h = -phiM1[idx_e] * sd - phiM1[idx_h] * ht;
+        phi0[idx_e] += order * tmp_e;
+        phi0[idx_h] += order * tmp_h;
+        idx_e += b2_;
+        idx_h += b2_;
+      }
+    }
+  }
+}
+
+template <typename T>
+template <unsigned MULT, bool VELOCITY>
+void KPM_Vector<T, 2>::KPM_MOTOR(KPM_Vector<T, 2> *kpm_final, unsigned axis)
+{
+  std::size_t i0, i1;
+  phi0 = kpm_final->v.col(kpm_final->index).data();
+  phiM1 = v.col((memory - 1 + index) % memory).data();
+  phiM2 = v.col((memory - 2 + index) % memory).data();
+
+  // Initialize tiles that have deffects connecting elements of a previous tile
+  for (auto istr = h.cross_mozaic_indexes.begin();
+       istr != h.cross_mozaic_indexes.end(); istr++)
+    initiate_stride<MULT>(*istr);
+
+  for (i1 = NGHOSTS; i1 < r.Ld[1] - NGHOSTS; i1 += TILE) {
+    build_regular_phases<MULT, VELOCITY>(i1, axis);
+
+    for (i0 = NGHOSTS; i0 < r.Ld[0] - NGHOSTS; i0 += TILE) {
+
+      std::size_t istr =
+        (i1 - NGHOSTS) / TILE * r.lStr[0] + (i0 - NGHOSTS) / TILE;
+      if (h.cross_mozaic.at(istr))
+        initiate_stride<MULT>(istr);
+      // These four lines pertrain only to the magnetic field
+      for (std::size_t io = 0; io < r.Orb; io++) {
+        const std::size_t ip = io * x.basis[2];
+        const std::size_t j0 = ip + i0 + i1 * std;
+
+        // Local Energy
+        if (!VELOCITY)
+          mult_local_disorder<MULT>(j0, io);
+
+        // Hoppings
+        mult_regular_hoppings(j0, io);
+
+        const std::size_t cell_idx = j0 - ip;
+        const std::size_t b2 = x.basis[2];
+        mult_bdg_terms<MULT>(cell_idx, b2);
+      }
+      KPM_VectorBasis<T, 2u>::template multiply_defect<
+        MULT, VELOCITY>(istr, phi0, phiM1, axis);
+
+      // Empty the vacancies in the tile
+      auto &hV = h.hV.position.at(istr);
+      for (auto k = hV.begin(); k != hV.end(); k++)
+        phi0[*k] = 0.;
+    }
+  }
+
+  for (auto vc = h.hV.vacancies_with_defects.begin();
+       vc != h.hV.vacancies_with_defects.end(); vc++)
     phi0[*vc] = 0.;
 
-    
-  /* 
+  /*
      Broken Imputirities:
-     The bulk domain will receive contributions from the broken defects 
+     The bulk domain will receive contributions from the broken defects
      located on the neighbour domains.
-     We already subtract the vacancies from these contributions 
+     We already subtract the vacancies from these contributions
   */
-    
-  for(auto id = h.hd.begin(); id != h.hd.end(); id++)
-    id->template multiply_broken_defect<MULT,VELOCITY>(phi0, phiM1,axis);
+
+  for (auto id = h.hd.begin(); id != h.hd.end(); id++)
+    id->template multiply_broken_defect<MULT, VELOCITY>(phi0, phiM1, axis);
 
   kpm_final->Exchange_Boundaries();
-
-
 }
 template <typename T>
-void KPM_Vector <T, 2>::measure_wave_packet(T * bra, T * ket, T * results)  
+void KPM_Vector<T, 2>::measure_wave_packet(T *bra, T *ket, T *results)
 {
-  Coordinates<std::size_t,3> ad(r.Ld), at(r.Lt);
+  Coordinates<std::size_t, 3> ad(r.Ld), at(r.Lt);
   ad.set({std::size_t(NGHOSTS), std::size_t(NGHOSTS), std::size_t(0)});
-  r.convertCoordinates(at,ad);
-  for(unsigned i = 0; i < 4; i++)
+  r.convertCoordinates(at, ad);
+  for (unsigned i = 0; i < 4; i++)
     results[i] *= 0.;
 
-  for(unsigned io = 0; io < r.Orb; io++)
-    {
-      value_type deltax = r.rOrb(0,io);
-      value_type deltay = r.rOrb(1,io);
-	
-      for(unsigned i1 = 0; i1 < r.ld[1]; i1++)
-        {
-          std::size_t ind = ad.set({std::size_t(NGHOSTS),std::size_t(i1 + NGHOSTS), std::size_t(io)}).index;
-          value_type z1 = at.coord[1] + i1;
-          value_type x0 = at.coord[0]*r.rLat(0,0) + z1 * r.rLat(0,1) + deltax;
-          value_type y0 = at.coord[0]*r.rLat(1,0) + z1 * r.rLat(1,1) + deltay;	    
+  for (unsigned io = 0; io < r.Orb; io++) {
+    value_type deltax = r.rOrb(0, io);
+    value_type deltay = r.rOrb(1, io);
 
-          T xl1 = assign_value(0., 0.);
-          T xl2 = assign_value(0., 0.);
-          T yl1 = assign_value(0., 0.);
-          T yl2 = assign_value(0., 0.);
-	    
-          for(unsigned i0 = 0; i0 < r.ld[0]; i0++)
-            {
-              std::size_t j0 = ind + i0;
-              value_type x = x0 + i0 * r.rLat(0,0);
-              value_type y = y0 + i0 * r.rLat(1,0);
-              T p = myconj(*(bra + j0)) * (*(ket + j0));
-              xl1 += p * x;
-              xl2 += p * x * x;
-              yl1 += p * y;
-              yl2 += p * y * y;
-            }
-    
-          results[0] += xl1;
-          results[1] += xl2;
-          results[2] += yl1;
-          results[3] += yl2;
-        }
+    for (unsigned i1 = 0; i1 < r.ld[1]; i1++) {
+      std::size_t ind = ad.set({std::size_t(NGHOSTS), std::size_t(i1 + NGHOSTS),
+                                std::size_t(io)})
+                          .index;
+      value_type z1 = at.coord[1] + i1;
+      value_type x0 = at.coord[0] * r.rLat(0, 0) + z1 * r.rLat(0, 1) + deltax;
+      value_type y0 = at.coord[0] * r.rLat(1, 0) + z1 * r.rLat(1, 1) + deltay;
+
+      T xl1 = assign_value(0., 0.);
+      T xl2 = assign_value(0., 0.);
+      T yl1 = assign_value(0., 0.);
+      T yl2 = assign_value(0., 0.);
+
+      for (unsigned i0 = 0; i0 < r.ld[0]; i0++) {
+        std::size_t j0 = ind + i0;
+        value_type x = x0 + i0 * r.rLat(0, 0);
+        value_type y = y0 + i0 * r.rLat(1, 0);
+        T p = myconj(*(bra + j0)) * (*(ket + j0));
+        xl1 += p * x;
+        xl2 += p * x * x;
+        yl1 += p * y;
+        yl2 += p * y * y;
+      }
+
+      results[0] += xl1;
+      results[1] += xl2;
+      results[2] += yl1;
+      results[3] += yl2;
     }
+  }
   // Periodic component of the Hamiltonian + Anderson disorder
 }
 template <typename T>
-void KPM_Vector <T, 2>::Exchange_Boundaries() {
+void KPM_Vector<T, 2>::Exchange_Boundaries()
+{
   /*
     I have four boundaries to exchange with the other threads.
     First I will copy the lines along the a[1] direction to a consecutive shared vector
   */
-#pragma omp barrier    
-  Coordinates<std::size_t,3u> x(r.Ld), z(r.Lt);
-  T  *phi = v.col(index).data();
-
-    
-  for(unsigned d = 0; d < 2; d++)
-    {
-      std::size_t BSize = r.Orb * transf_max[d] * NGHOSTS;
-      T * ghosts_left = & simul.ghosts[0];
-      T * ghosts_right = & simul.ghosts[BSize];
-
-      for(std::size_t io = 0; io < r.Orb; io++)
-        {
-          std::size_t il = MemIndBeg[d][0][io];
-          std::size_t ir = MemIndBeg[d][1][io];
-	    
-          for(std::size_t i = 0; i < transf_bound[d][0]; i++)
-            {
-              for(unsigned ig = 0; ig < NGHOSTS; ig++)
-                ghosts_left [i + (ig + NGHOSTS*io) * transf_bound[d][0] ] = phi[il + ig * tile_ghosts[d]];
-              il += tile[d];
-            }
-	    
-          for(std::size_t i = 0; i < transf_bound[d][1]; i++)
-            {
-              for(unsigned ig = 0; ig < NGHOSTS; ig++)
-                ghosts_right[i + (ig + NGHOSTS*io) * transf_bound[d][1] ] = phi[ir + ig * tile_ghosts[d]];
-              ir += tile[d];
-            }
-        }
-	
-      // Copy the boundaries to the shared memory
-      std::copy( ghosts_left, ghosts_left + 2*BSize, simul.Global.ghosts.begin() + 2*BSize * r.thread_id );	  
 #pragma omp barrier
-      auto neigh_left = simul.Global.ghosts.begin() + 2 * block[d][0] * BSize;
-      auto neigh_right  = simul.Global.ghosts.begin() + 2 * block[d][1] * BSize;
-      std::copy(neigh_right,         neigh_right + BSize , ghosts_right );     // From the left to the right
-      std::copy(neigh_left + BSize,  neigh_left + 2*BSize, ghosts_left  )  ;   // From the right to the left
-	
-#pragma omp barrier	
-      for(std::size_t io = 0; io < r.Orb; io++)
-        {
-          std::size_t il = MemIndEnd[d][0][io];
-          std::size_t ir = MemIndEnd[d][1][io];
-	    
-          for(std::size_t i = 0; i < transf_bound[d][0]; i++)
-            {
-              for(int ig = 0; ig < NGHOSTS; ig++)
-                phi[il + ig * tile_ghosts[d]] = ghosts_left [i + (ig + NGHOSTS * io) * transf_bound[d][0]];
-              il += tile[d];
-            }
-	    
-          for(std::size_t i = 0; i < transf_bound[d][1]; i++)
-            {
-              for(int ig = 0; ig < NGHOSTS; ig++)
-                phi[ir + ig * tile_ghosts[d]] = ghosts_right[i + (ig + NGHOSTS * io) * transf_bound[d][1]];
-              ir += tile[d];
-            }
-        }
+  Coordinates<std::size_t, 3u> x(r.Ld), z(r.Lt);
+  T *phi = v.col(index).data();
+
+  for (unsigned d = 0; d < 2; d++) {
+    std::size_t BSize = r.Orb * transf_max[d] * NGHOSTS;
+    T *ghosts_left = &simul.ghosts[0];
+    T *ghosts_right = &simul.ghosts[BSize];
+
+    for (std::size_t io = 0; io < r.Orb; io++) {
+      std::size_t il = MemIndBeg[d][0][io];
+      std::size_t ir = MemIndBeg[d][1][io];
+
+      for (std::size_t i = 0; i < transf_bound[d][0]; i++) {
+        for (unsigned ig = 0; ig < NGHOSTS; ig++)
+          ghosts_left[i + (ig + NGHOSTS * io) * transf_bound[d][0]] =
+            phi[il + ig * tile_ghosts[d]];
+        il += tile[d];
+      }
+
+      for (std::size_t i = 0; i < transf_bound[d][1]; i++) {
+        for (unsigned ig = 0; ig < NGHOSTS; ig++)
+          ghosts_right[i + (ig + NGHOSTS * io) * transf_bound[d][1]] =
+            phi[ir + ig * tile_ghosts[d]];
+        ir += tile[d];
+      }
     }
+
+    // Copy the boundaries to the shared memory
+    std::copy(
+      ghosts_left, ghosts_left + 2 * BSize,
+      simul.Global.ghosts.begin() + 2 * BSize * r.thread_id
+    );
+#pragma omp barrier
+    auto neigh_left = simul.Global.ghosts.begin() + 2 * block[d][0] * BSize;
+    auto neigh_right = simul.Global.ghosts.begin() + 2 * block[d][1] * BSize;
+    std::copy(
+      neigh_right, neigh_right + BSize, ghosts_right
+    ); // From the left to the right
+    std::copy(
+      neigh_left + BSize, neigh_left + 2 * BSize, ghosts_left
+    ); // From the right to the left
+
+#pragma omp barrier
+    for (std::size_t io = 0; io < r.Orb; io++) {
+      std::size_t il = MemIndEnd[d][0][io];
+      std::size_t ir = MemIndEnd[d][1][io];
+
+      for (std::size_t i = 0; i < transf_bound[d][0]; i++) {
+        for (int ig = 0; ig < NGHOSTS; ig++)
+          phi[il + ig * tile_ghosts[d]] =
+            ghosts_left[i + (ig + NGHOSTS * io) * transf_bound[d][0]];
+        il += tile[d];
+      }
+
+      for (std::size_t i = 0; i < transf_bound[d][1]; i++) {
+        for (int ig = 0; ig < NGHOSTS; ig++)
+          phi[ir + ig * tile_ghosts[d]] =
+            ghosts_right[i + (ig + NGHOSTS * io) * transf_bound[d][1]];
+        ir += tile[d];
+      }
+    }
+  }
 }
 
 template <typename T>
-void KPM_Vector <T, 2>::test_boundaries_system() {
+void KPM_Vector<T, 2>::test_boundaries_system()
+{
 
   /*
-    This  function tests if the boudaries exchange are well implemented 
+    This  function tests if the boudaries exchange are well implemented
   */
 
   Coordinates<std::size_t, 3> z(r.Lt);
   Coordinates<std::size_t, 3> x(r.Ld);
-    
-  for(std::size_t  io = 0; io < (std::size_t) r.Ld[2]; io++)
-    for(std::size_t i1 = NGHOSTS; i1 < (std::size_t) r.Ld[1] - NGHOSTS ; i1++)
-      for(std::size_t i0 = NGHOSTS; i0 < (std::size_t) r.Ld[0] - NGHOSTS ; i0++)
-        {
-          r.convertCoordinates(z, x.set({i0,i1,io}) );
-          v(x.set({i0,i1,io}).index, 0) = aux_wr(z.index);
-        }
-    
+
+  for (std::size_t io = 0; io < (std::size_t)r.Ld[2]; io++)
+    for (std::size_t i1 = NGHOSTS; i1 < (std::size_t)r.Ld[1] - NGHOSTS; i1++)
+      for (std::size_t i0 = NGHOSTS; i0 < (std::size_t)r.Ld[0] - NGHOSTS;
+           i0++) {
+        r.convertCoordinates(z, x.set({i0, i1, io}));
+        v(x.set({i0, i1, io}).index, 0) = aux_wr(z.index);
+      }
+
   Exchange_Boundaries();
 #pragma omp barrier
-    
+
 #pragma omp critical
   {
-    for(std::size_t  io = 0; io < (std::size_t) r.Ld[2]*0 + 1; io++)
-      for(std::size_t i1 = 0; i1 < (std::size_t) r.Ld[1] ; i1++)
-        {
-          for(std::size_t i0 = 0; i0 < (std::size_t) r.Ld[0]; i0++)
-            {
-              r.convertCoordinates(z, x.set({i0,i1,io}) );
-              T val = aux_wr(z.index);
-		
-              if( aux_test(v(x.index , 0), val ) )
-                {
-                  std::cout << "Problems---->" << v(x.index , 0) << " " << val << " ";
-                  std::cout << "\t wrong " << std::real(v(x.index , 0)) << " " << z.index << " " << x.index << "\t\t";
-                  x.print();
-		    
-                }
-            };
-        }
+    for (std::size_t io = 0; io < (std::size_t)r.Ld[2] * 0 + 1; io++)
+      for (std::size_t i1 = 0; i1 < (std::size_t)r.Ld[1]; i1++) {
+        for (std::size_t i0 = 0; i0 < (std::size_t)r.Ld[0]; i0++) {
+          r.convertCoordinates(z, x.set({i0, i1, io}));
+          T val = aux_wr(z.index);
+
+          if (aux_test(v(x.index, 0), val)) {
+            std::cout << "Problems---->" << v(x.index, 0) << " " << val << " ";
+            std::cout << "\t wrong " << std::real(v(x.index, 0)) << " "
+                      << z.index << " " << x.index << "\t\t";
+            x.print();
+          }
+        };
+      }
   }
   std::cout << "Thread : " << r.thread_id << std::endl;
 #pragma omp barrier
   exit(1);
 }
 template <typename T>
-void KPM_Vector <T, 2>::empty_ghosts(int mem_index) {
+void KPM_Vector<T, 2>::empty_ghosts(int mem_index)
+{
   /* This function takes the kpm vector that's being used, 'v' and sets to zero the part corresponding
    * to the ghosts, that is, the part of the vector that actually belongs to a different thread.
-   * This is done so that when we take the dot product 'v' with another vector only terms pertraining 
+   * This is done so that when we take the dot product 'v' with another vector only terms pertraining
    * to the current thread are considered.
    * */
-  
+
   Coordinates<long, 3u> x(r.Ld);
-  
-  
+
   // There are four sides, so set the ghosts in each side to zero individually.
   // Remember that the size of the ghost boundaries depends on NGHOSTS.
-    
-  for(long  io = 0; io < (long) r.Ld[2]; io++)
-    for(long i0 = 0; i0 < (long) r.Ld[0]; i0++)
-      for(int d = 0; d < NGHOSTS; d++)
-        v(x.set({i0,(long) d,io}).index, mem_index) *= 0;
 
-  for(long  io = 0; io < (long) r.Ld[2]; io++)
-    for(long i0 = 0; i0 < (long) r.Ld[0]; i0++)
-      for(int d = 0; d < NGHOSTS; d++)
-        v(x.set({i0, (long) (r.Ld[1] - 1 - d),io}).index, mem_index) *= 0;
-  
-  for(long  io = 0; io < (long) r.Ld[2]; io++)
-    for(long i1 = 0; i1 < (long) r.Ld[1]; i1++)
-      for(int d = 0; d < NGHOSTS; d++)
-        v(x.set({(long) d,i1,io}).index, mem_index) *= 0;
+  for (long io = 0; io < (long)r.Ld[2]; io++)
+    for (long i0 = 0; i0 < (long)r.Ld[0]; i0++)
+      for (int d = 0; d < NGHOSTS; d++)
+        v(x.set({i0, (long)d, io}).index, mem_index) *= 0;
 
-  for(long  io = 0; io < (long) r.Ld[2]; io++)
-    for(long i1 = 0; i1 < (long) r.Ld[1]; i1++)
-      for(int d = 0; d < NGHOSTS; d++)
-        v(x.set({(long) (r.Ld[0] - 1 - d),i1,io}).index, mem_index) *= 0;
+  for (long io = 0; io < (long)r.Ld[2]; io++)
+    for (long i0 = 0; i0 < (long)r.Ld[0]; i0++)
+      for (int d = 0; d < NGHOSTS; d++)
+        v(x.set({i0, (long)(r.Ld[1] - 1 - d), io}).index, mem_index) *= 0;
 
+  for (long io = 0; io < (long)r.Ld[2]; io++)
+    for (long i1 = 0; i1 < (long)r.Ld[1]; i1++)
+      for (int d = 0; d < NGHOSTS; d++)
+        v(x.set({(long)d, i1, io}).index, mem_index) *= 0;
+
+  for (long io = 0; io < (long)r.Ld[2]; io++)
+    for (long i1 = 0; i1 < (long)r.Ld[1]; i1++)
+      for (int d = 0; d < NGHOSTS; d++)
+        v(x.set({(long)(r.Ld[0] - 1 - d), i1, io}).index, mem_index) *= 0;
 }
 
+#define instantiateTYPE(type)                                                  \
+  template class KPM_Vector<type, 2u>;                                         \
+  template void KPM_Vector<type, 2u>::template KPM_MOTOR<                      \
+    0u, false>(KPM_Vector<type, 2u> * kpm_final, unsigned axis);               \
+  template void KPM_Vector<type, 2u>::template KPM_MOTOR<                      \
+    1u, false>(KPM_Vector<type, 2u> * kpm_final, unsigned axis);               \
+  template void KPM_Vector<type, 2u>::template KPM_MOTOR<                      \
+    0u, true>(KPM_Vector<type, 2u> * kpm_final, unsigned axis);                \
+  template void KPM_Vector<type, 2u>::template pairing<                        \
+    -1>(const type gamma_, const unsigned p_);                                 \
+  template void KPM_Vector<type, 2u>::template pairing<                        \
+    1>(const type gamma_, const unsigned p_);
 
-
-#define instantiateTYPE(type)               template class KPM_Vector <type,2u>; \
-  template void KPM_Vector<type,2u>::template KPM_MOTOR<0u,false>(KPM_Vector<type,2u> * kpm_final, unsigned axis); \
-  template void KPM_Vector<type,2u>::template KPM_MOTOR<1u,false>(KPM_Vector<type,2u> * kpm_final, unsigned axis); \
-  template void KPM_Vector<type,2u>::template KPM_MOTOR<0u,true>(KPM_Vector<type,2u> * kpm_final,  unsigned axis);
-
-instantiateTYPE(float)
-instantiateTYPE(double)
-instantiateTYPE(long double)
-instantiateTYPE(std::complex<float>)
-instantiateTYPE(std::complex<double>)
-instantiateTYPE(std::complex<long double>)
-
-
-
-
-
-
+instantiateTYPE(float);
+instantiateTYPE(double);
+instantiateTYPE(long double);
+instantiateTYPE(std::complex<float>);
+instantiateTYPE(std::complex<double>);
+instantiateTYPE(std::complex<long double>);
