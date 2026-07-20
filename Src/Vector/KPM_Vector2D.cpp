@@ -617,9 +617,11 @@ void KPM_Vector<T, 2>::KPM_MOTOR(KPM_Vector<T, 2> *kpm_final, unsigned axis)
         // Hoppings
         mult_regular_hoppings(j0, io);
 
-        const std::size_t cell_idx = j0 - ip;
-        const std::size_t b2 = x.basis[2];
-        mult_bdg_terms<MULT>(cell_idx, b2);
+        // if (h.bdg.is_bdg) {
+        //   const std::size_t cell_idx = j0 - ip;
+        //   const std::size_t b2 = x.basis[2];
+        //   mult_bdg_terms<MULT>(cell_idx, b2);
+        // }
       }
       KPM_VectorBasis<T, 2u>::template multiply_defect<
         MULT, VELOCITY>(istr, phi0, phiM1, axis);

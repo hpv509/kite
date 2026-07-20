@@ -31,7 +31,7 @@ Hamiltonian<T, D>::Hamiltonian(
   hr(name, r),
   cross_mozaic(r.NStr),
   hV(name, rr, rnd),
-  bdg(1)
+  bdg(r.Sized / 2)
 {
 #pragma omp critical
   {
