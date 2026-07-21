@@ -6,10 +6,15 @@ HamiltonianBdG<T, D>::HamiltonianBdG(const std::size_t N_) :
 {}
 
 template <Scalar T, unsigned D>
-void HamiltonianBdG<T, D>::init_fields(const real delta_, const real ht_)
+void HamiltonianBdG<T, D>::init_fields(
+  const real delta_,
+  const real ht_,
+  const real mu_
+)
 {
   hartree.setOnes();
   hartree *= ht_;
+  hartree -= mu_;
   s_delta.setOnes();
   s_delta *= delta_;
 }

@@ -5,8 +5,9 @@
 /*                                                         */
 /***********************************************************/
 
-template <typename T,unsigned D>
-struct Defect_Operator: public ComplexTraits<T> {
+template <typename T, unsigned D>
+struct Defect_Operator : public ComplexTraits<T> {
+  static inline constexpr unsigned is_bdg = LatticeStructure<D>::is_bdg;
   using value_type = typename extract_scalar<T>::type;
   using ComplexTraits<T>::multEiphase;
   double                                   p;                        // Concentration of defects
@@ -32,7 +33,8 @@ struct Defect_Operator: public ComplexTraits<T> {
   std::vector <std::vector<std::size_t>> position;                   // vector of vectors with positions in the lattice of the Orbital 0 of the defects for each tile block
   Eigen::Array<T, -1, -1>        new_hopping;
   KPMRandom <T>                        & rnd;
-  std::vector <int>          positions_fixed;
+  std::vector<int> positions_fixed;
+  const std::size_t offset;
 
   // Test
   std::vector<std::vector<std::size_t>> safe_k1;
@@ -73,36 +75,51 @@ struct Defect_Operator: public ComplexTraits<T> {
       }
   }
 
-  
   template <unsigned MULT, bool VELOCITY>
-  void multiply_broken_defect(T* & phi0, T* & phiM1, unsigned axis) {
-    Coordinates<std::ptrdiff_t, D + 1> global1(r.Lt), global2(r.Lt), local1(r.Ld) ;
-    Eigen::Map<Eigen::Matrix<std::ptrdiff_t,2,1>> v_global1(global1.coord), v_global2(global2.coord);
+  void multiply_broken_defect(T *&phi0, T *&phiM1, unsigned axis)
+  {
+    Coordinates<std::ptrdiff_t, D + 1> global1(r.Lt), global2(r.Lt),
+      local1(r.Ld);
+    Eigen::Map<Eigen::Matrix<std::ptrdiff_t, 2, 1>> v_global1(global1.coord),
+      v_global2(global2.coord);
     double phase;
-    
+
+    constexpr value_type order = MULT + 1;
     Eigen::Matrix<double, 1, 2> temp_vect;
-    for(std::size_t i = 0; i < border_element1.size(); i++)
-      {
-        std::size_t i1 = border_element1[i];
-        std::size_t i2 = border_element2[i];
-        
-        // These four lines pertrain only to the ghost_correlation
-        r.convertCoordinates(global1, local1.set_coord(i1));
-        r.convertCoordinates(global2, local1.set_coord(i2));
-        temp_vect  = (v_global2 - v_global1).template cast<double>().matrix().transpose();
-        phase = temp_vect(0)*r.ghost_pot(0,1)*v_global1(1); //.template cast<double>().matrix();
-        
-        if(VELOCITY)
-          phi0[i1] += value_type(MULT + 1) * border_v.at(axis).at(i) * border_hopping[i] * phiM1[i2] * multEiphase(phase);
-        else
-          phi0[i1] += value_type(MULT + 1) * border_hopping[i] * phiM1[i2] * multEiphase(phase);
+    for (std::size_t i = 0; i < border_element1.size(); i++) {
+      std::size_t i1 = border_element1[i];
+      std::size_t i2 = border_element2[i];
+
+      // These four lines pertrain only to the ghost_correlation
+      r.convertCoordinates(global1, local1.set_coord(i1));
+      r.convertCoordinates(global2, local1.set_coord(i2));
+      temp_vect =
+        (v_global2 - v_global1).template cast<double>().matrix().transpose();
+      phase = temp_vect(0) * r.ghost_pot(0, 1) *
+              v_global1(1); //.template cast<double>().matrix();
+
+      const T t1 = border_hopping[i] * multEiphase(phase);
+      if (VELOCITY) {
+        const value_type t_v = border_v[axis][i];
+        phi0[i1] += order * t1 * t_v * phiM1[i2];
+        if constexpr (is_bdg)
+          phi0[i1 + offset] -=
+            order * ComplexTraits<T>::myconj(t1) * t_v * phiM1[i2 + offset];
+      } else {
+        phi0[i1] += order * t1 * phiM1[i2];
+        if constexpr (is_bdg)
+          phi0[i1 + offset] -=
+            order * ComplexTraits<T>::myconj(t1) * phiM1[i2 + offset];
       }
-    
-    if(!VELOCITY)
-      for(std::size_t i = 0; i < border_element.size(); i++)
-        {
-          std::size_t i1 = border_element[i];
-          phi0[i1] += value_type(MULT + 1) * border_U[i] * phiM1[i1];
-        }
+    }
+    if (!VELOCITY)
+      for (std::size_t i = 0; i < border_element.size(); i++) {
+        const std::size_t i1 = border_element[i];
+        const T bU = border_U[i];
+        phi0[i1] += order * bU * phiM1[i1];
+        if constexpr (is_bdg)
+          phi0[i1 + offset] -=
+            order * ComplexTraits<T>::myconj(bU) * phiM1[i1 + offset];
+      }
   }
 };

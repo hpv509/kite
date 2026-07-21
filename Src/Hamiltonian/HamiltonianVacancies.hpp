@@ -7,9 +7,10 @@
 
 template <typename T,unsigned D>
 struct Vacancy_Operator {
-  LatticeStructure <D>                   & r;
-  KPMRandom <T>                        & rnd;
-  char*                                 name;
+  static inline constexpr unsigned is_bdg = LatticeStructure<D>::is_bdg;
+  LatticeStructure<D> &r;
+  KPMRandom<T> &rnd;
+  char *name;
   // vector of vectors with positions in the lattice of Vacancies for each tile block
   std::vector <std::vector<std::size_t>> position;                   
   std::vector <double>                   concentration;
@@ -26,7 +27,10 @@ struct Vacancy_Operator {
   void erase_wavefunction(Derived &&v_)
   {
     for (const auto &pos : position)
-      for (const auto &idx : pos)
+      for (const auto &idx : pos) {
         v_(idx) = 0.;
+        if constexpr (is_bdg)
+          v_(idx + r.offset) = 0.;
+      }
   }
 };

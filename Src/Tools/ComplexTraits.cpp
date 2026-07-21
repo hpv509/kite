@@ -11,7 +11,7 @@ T ComplexTraits<T>::assign_value(double x, double y)
 }
 
 template <typename T>
-T ComplexTraits<T>::myconj(T &x)
+T ComplexTraits<T>::myconj(const T x)
 {
   if constexpr (Complex<T>)
     return std::conj(x);

@@ -31,7 +31,9 @@ GlobalSimulation<T, D>::GlobalSimulation(char *name) : rglobal(name)
   // Global is an instance of GLOBAL_VARIABLES which contains global objects to be
   // shared among all threads
 
-  Global.ghosts.resize(rglobal.get_BorderSize());
+  const std::size_t global_ghost_size =
+    rglobal.get_BorderSize() * (LatticeStructure<D>::is_bdg + 1);
+  Global.ghosts.resize(global_ghost_size);
   std::fill(Global.ghosts.begin(), Global.ghosts.end(), 0);
 
   std::string path;

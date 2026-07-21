@@ -15,13 +15,15 @@ protected:
   const int memory;
   Simulation<T,D> & simul;
   Hamiltonian<T,D>           & h;
+  const std::size_t offset;
 public:
+  static inline constexpr unsigned is_bdg = LatticeStructure<D>::is_bdg;
   using value_type = typename extract_scalar<T>::type;
   using ComplexTraits<T>::assign_value;
   using ComplexTraits<T>::myconj;
   using ComplexTraits<T>::multEiphase;
   using ComplexTraits<T>::aux_wr;
-  Eigen::Matrix <T, Eigen::Dynamic,  Eigen::Dynamic > v;  
+  Eigen::Matrix <T, -1, -1> v;
   KPM_VectorBasis(int mem,  Simulation<T,D> & sim);
   void     set_index(int i);
   void     inc_index();

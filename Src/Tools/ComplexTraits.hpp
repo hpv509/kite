@@ -27,7 +27,7 @@ concept Scalar = Real<T> || Complex<T>;
 template <typename T>
 class ComplexTraits {
 public:
-  T myconj(T &x);
+  T myconj(const T x);
   T assign_value(double x, double y);
   T multEiphase(double phase);
   T aux_wr(std::size_t x);

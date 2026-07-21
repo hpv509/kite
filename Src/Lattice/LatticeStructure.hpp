@@ -40,7 +40,12 @@ public:
   int MagneticField = 0;
   bool boundary[D][2]; // Information about the Global border in the subdomain 
   Eigen::Matrix<double, D, D> ghost_pot; // ghosts_correlation potential
-  
+
+  // BdG Extension
+  static inline constexpr unsigned is_bdg{INTERACTION};
+  std::size_t Io;
+  std::size_t offset;
+
   LatticeStructure(char *);
   unsigned get_BorderSize();
   template <typename T>

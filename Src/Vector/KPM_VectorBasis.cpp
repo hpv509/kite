@@ -15,18 +15,18 @@ template <typename T, unsigned D>
 class Hamiltonian;
 template <typename T, unsigned D>
 class KPM_Vector;
-//#include "queue.hpp"
 #include "Simulation.hpp"
 #include "Hamiltonian.hpp"
 #include "KPM_VectorBasis.hpp"
 #include "KPM_Vector.hpp"
 
-
-template<typename T, unsigned D>
-KPM_VectorBasis<T,D>::KPM_VectorBasis(int mem,  Simulation<T,D> & sim) : memory(mem), simul(sim), h(sim.h)
+template <typename T, unsigned D>
+KPM_VectorBasis<T, D>::KPM_VectorBasis(int mem, Simulation<T, D> &sim) :
+  memory(mem), simul(sim), h(sim.h), offset(sim.r.offset)
 {
-  index  = 0;
-  v = Eigen::Matrix <T, Eigen::Dynamic,  Eigen::Dynamic >::Zero(simul.r.Sized, memory);
+  index = 0;
+  constexpr unsigned scale = is_bdg + 1;
+  v = Eigen::Matrix<T, -1, -1>::Zero(simul.r.Sized * scale, memory);
 }
 
 template<typename T, unsigned D>

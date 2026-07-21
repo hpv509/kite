@@ -17,7 +17,7 @@
 
 
 template <typename T, unsigned D>
-Defect_Operator<T,D>::Defect_Operator( Hamiltonian<T,D> & h1,  std::string & defect, H5::H5File *file ) : h(h1), r(h1.r), Global(h1.Global), position(h1.r.NStr), rnd(h.rnd)
+Defect_Operator<T,D>::Defect_Operator( Hamiltonian<T,D> & h1,  std::string & defect, H5::H5File *file ) : h(h1), r(h1.r), Global(h1.Global), position(h1.r.NStr), rnd(h.rnd), offset(r.offset)
 {
   Coordinates<std::size_t,D + 1> latt(r.ld), LATT(r.Lt), Latt(r.Ld), Latt2(r.Ld), latStr(r.lStr), x(r.nd);
   std::vector<int> tmp;

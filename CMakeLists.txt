@@ -13,6 +13,14 @@ endif()
 
 project(KITE)
 
+option(INTERACTION "Enable BdG physics" OFF)
+if(INTERACTION)
+    add_compile_definitions(INTERACTION=1)
+    message(STATUS "Build Mode: Mean-Field")
+else()
+    add_compile_definitions(INTERACTION=0)
+    message(STATUS "Build Mode: Non-interacting")
+endif()
 
 find_package(HDF5 COMPONENTS CXX C HL)
 if(${HDF5_FOUND})

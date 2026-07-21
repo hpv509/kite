@@ -93,6 +93,8 @@ LatticeStructure<D>::LatticeStructure(char *name )
       boundary[i][1] = (dist.coord[i] == nd[i] - 1 && Bd[i] == 0 ? false : true);	
     }
     
+  Io = (is_bdg + 1) * Orb;
+  offset = is_bdg * Sized;
 }
 
 template <unsigned D>

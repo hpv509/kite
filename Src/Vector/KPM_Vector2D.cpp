@@ -31,7 +31,9 @@ KPM_Vector<T,2u>::KPM_Vector(int mem, Simulation<T,2> & sim) :
   transf_max{r.ld[1], r.Ld[0]},
   h(sim.h),
   x(r.Ld),
-  std(x.basis[1])
+  std(x.basis[1]),
+  Io(r.Io),
+  offset(r.offset)
   {
     unsigned d;
     Coordinates <std::size_t, 3>     z(r.Ld);
@@ -157,7 +159,7 @@ void KPM_Vector<T, 2>::initiate_vector()
 
   } else if (seed == "ones") {
     Coordinates<std::size_t, 3> x(r.Ld);
-    for (std::size_t io = 0; io < r.Orb; io++)
+    for (std::size_t io = 0; io < Io; io++)
       for (std::size_t i1 = NGHOSTS; i1 < r.Ld[1] - NGHOSTS; i1++)
         for (std::size_t i0 = NGHOSTS; i0 < r.Ld[0] - NGHOSTS; i0++)
           v(x.set({i0, i1, io}).index, index) = norm;
@@ -165,13 +167,13 @@ void KPM_Vector<T, 2>::initiate_vector()
     // Proceed as normal
     // The RNG is called inside the Random.cpp file, and there the code checks for a SEED again
     Coordinates<std::size_t, 3> x(r.Ld);
-    for (std::size_t io = 0; io < r.Orb; io++)
+    for (std::size_t io = 0; io < Io; io++)
       for (std::size_t i1 = NGHOSTS; i1 < r.Ld[1] - NGHOSTS; i1++)
         for (std::size_t i0 = NGHOSTS; i0 < r.Ld[0] - NGHOSTS; i0++)
           v(x.set({i0, i1, io}).index, index) = norm * simul.rnd.init();
+    h.hV.erase_wavefunction(v.col(index));
+    initiate_phases();
   }
-  h.hV.erase_wavefunction(v.col(index));
-  initiate_phases();
 }
 
 template <typename T>
@@ -424,77 +426,103 @@ void KPM_Vector <T, 2>::build_regular_phases(int i1, unsigned axis)
 }
 
 template <typename T>
-template < unsigned MULT> 
-void KPM_Vector <T, 2>::initiate_stride(std::size_t & istr)
+template <unsigned MULT>
+void KPM_Vector<T, 2>::initiate_stride(std::size_t &istr)
 {
   std::size_t i0, i1;
   const std::size_t std = x.basis[1];
   // Periodic component of the Hamiltonian + Anderson disorder
-  i0 = ((istr) % (r.lStr[0]) ) * TILE + NGHOSTS;
-  i1 = ((istr) / r.lStr[0] ) * TILE + NGHOSTS;
-  
-  for(std::size_t io = 0; io < r.Orb; io++)
-    {
-      const std::size_t ip = io * x.basis[2];
-      const std::size_t j0 = ip + i0 + i1 * std;
-      const std::size_t j1 = j0 + TILE * std; //j0 and j1 define the limits of the for cycle
+  i0 = ((istr) % (r.lStr[0])) * TILE + NGHOSTS;
+  i1 = ((istr) / r.lStr[0]) * TILE + NGHOSTS;
 
+  for (std::size_t io = 0; io < Io; io++) {
+    const std::size_t ip = io * x.basis[2];
+    const std::size_t j0 = ip + i0 + i1 * std;
+    const std::size_t j1 =
+      j0 + TILE * std; //j0 and j1 define the limits of the for cycle
 
-      for(std::size_t j = j0; j < j1; j += std )
-        for(std::size_t i = j; i < j + TILE ; i++)
-          phi0[i] = - value_type(MULT) * phiM2[i];
-    }
+    for (std::size_t j = j0; j < j1; j += std)
+      for (std::size_t i = j; i < j + TILE; i++)
+        phi0[i] = -value_type(MULT) * phiM2[i];
+  }
 }
 
 template <typename T>
-template < unsigned MULT> 
-void inline KPM_Vector <T, 2>::mult_local_disorder(const  std::size_t & j0, const  std::size_t & io)
+template <unsigned MULT>
+void inline KPM_Vector<T, 2>::mult_local_disorder(
+  const std::size_t &j0,
+  const std::size_t &io
+)
 {
   const std::size_t j1 = j0 + TILE * std;
-  const std::ptrdiff_t dd = (h.Anderson_orb_address[io] - std::ptrdiff_t(io))*r.Nd;
+  const std::ptrdiff_t dd =
+    (h.Anderson_orb_address[io] - std::ptrdiff_t(io)) * r.Nd;
+  constexpr value_type order = MULT + 1.0;
   // Anderson disorder
-  if( h.Anderson_orb_address[io] >= 0)
-    {
-      for(std::size_t j = j0; j < j1; j += std )
-        for(std::size_t i = j; i < j + TILE ; i++)
-          phi0[i] += value_type(MULT + 1) * phiM1[i] * h.U_Anderson.at(i + dd);
+  if (h.Anderson_orb_address[io] >= 0) {
+    for (std::size_t j = j0; j < j1; j += std) {
+      for (std::size_t i = j; i < j + TILE; ++i)
+        phi0[i] += order * h.U_Anderson[i + dd] * phiM1[i];
+      if constexpr (is_bdg) {
+        for (std::size_t i = j; i < j + TILE; ++i)
+          phi0[i + offset] -= order * h.U_Anderson[i + dd] * phiM1[i + offset];
+      }
     }
-  else if (h.Anderson_orb_address[io] == - 1)
-    {
-      for(std::size_t j = j0; j < j1; j += std )
-        for(std::size_t i = j; i < j + TILE ; i++)
-          phi0[i] += value_type(MULT + 1) * phiM1[i] * h.U_Orbital.at(io);
+  } else if (h.Anderson_orb_address[io] == -1) {
+    const value_type tmp = order * h.U_Orbital[io];
+    for (std::size_t j = j0; j < j1; j += std) {
+      for (std::size_t i = j; i < j + TILE; ++i)
+        phi0[i] += tmp * phiM1[i];
+      if constexpr (is_bdg) {
+        for (std::size_t i = j + offset; i < j + TILE + offset; ++i)
+          phi0[i] -= tmp * phiM1[i];
+      }
     }
+  }
 }
 
 template <typename T>
-void inline KPM_Vector <T, 2>::mult_regular_hoppings(const  std::size_t & j0, const  std::size_t & io){
+void inline KPM_Vector<T, 2>::mult_regular_hoppings(
+  const std::size_t &j0,
+  const std::size_t &io
+)
+{
   std::size_t count;
   const std::size_t j1 = j0 + TILE * std;
   std::size_t rr[2], hop[2], x, y; // Variables for TBC
   // Hoppings
-  for(unsigned ib = 0; ib < h.hr.NHoppings(io); ib++){
-      rr[0] = (j0 % r.Ld[0]);
-      rr[1] = (j0 % (r.Ld[0] * r.Ld[1]))/(r.Ld[0]);
-      
-      const std::ptrdiff_t d1 = h.hr.distance(ib, io);
-      // Determine the Supercell Jumps
-      const std::size_t i_f = j0 + d1;
-      hop[0] = (i_f % r.Ld[0] ) - rr[0] +1 ;
-      hop[1] = (i_f % (r.Ld[0] * r.Ld[1]))/(r.Ld[0]) - rr[1] + 1;
-      
-      count = 0;
-      y = 0;
-      for(std::size_t j = j0; j < j1; j += std ) {
-	const T t1 = mult_t1_ghost_cor[io][ib][count++] * Fact_Bnd[1][hop[1]][rr[1]+y];
-	x = 0;
-	for(std::size_t i = j; i < j + TILE ; i++) {
-	  
-	  phi0[i] += t1 * phiM1[i + d1] * Fact_Bnd[0][hop[0]][rr[0]+x];
-	  x++;
-	};
-	y++;
-      };
+  for (unsigned ib = 0; ib < h.hr.NHoppings(io); ib++) {
+    rr[0] = (j0 % r.Ld[0]);
+    rr[1] = (j0 % (r.Ld[0] * r.Ld[1])) / (r.Ld[0]);
+
+    const std::ptrdiff_t d1 = h.hr.distance(ib, io);
+    // Determine the Supercell Jumps
+    const std::size_t i_f = j0 + d1;
+    hop[0] = (i_f % r.Ld[0]) - rr[0] + 1;
+    hop[1] = (i_f % (r.Ld[0] * r.Ld[1])) / (r.Ld[0]) - rr[1] + 1;
+
+    count = 0;
+    y = 0;
+    for (std::size_t j = j0; j < j1; j += std) {
+      const T t1 =
+        mult_t1_ghost_cor[io][ib][count++] * Fact_Bnd[1][hop[1]][rr[1] + y];
+      x = 0;
+      for (std::size_t i = j; i < j + TILE; i++) {
+        const T f1 = Fact_Bnd[0][hop[0]][rr[0] + x];
+        phi0[i] += t1 * f1 * phiM1[i + d1];
+        ++x;
+      }
+      if constexpr (is_bdg) {
+        const T t2 = myconj(t1);
+        x = 0;
+        for (std::size_t i = j; i < j + TILE; i++) {
+          const T f1 = myconj(Fact_Bnd[0][hop[0]][rr[0] + x]);
+          phi0[i + offset] -= t2 * f1 * phiM1[i + d1 + offset];
+          ++x;
+        }
+      }
+      ++y;
+    }
   }
 }
 
@@ -510,6 +538,7 @@ void KPM_Vector<T, 2>::mult_position(
   Eigen::Map<Eigen::Matrix<std::ptrdiff_t, 2, 1>> v_global(global.coord);
   const value_type dr = r.rLat(dir_, 0);
   const Eigen::Matrix<double, 2, 1> org_global(0.5 * r.Lt[0], 0.5 * r.Lt[1]);
+  constexpr unsigned scale = is_bdg + 1;
 
   for (unsigned io = 0, Io = r.Orb; io < Io; ++io) {
     const value_type r_orb = r.rOrb(dir_, io);
@@ -519,8 +548,12 @@ void KPM_Vector<T, 2>::mult_position(
       const Eigen::Matrix<double, 2, 1> v_shift =
         v_global.template cast<double>() - org_global;
       const value_type r0 = r.rLat.row(dir_) * v_shift + r_orb;
-      for (std::size_t i0 = 0, I0 = r.ld[0]; i0 < I0; ++i0)
-        phi0[local.index + i0] *= (r0 + i0 * dr);
+
+      for (unsigned s = 0; s < scale; ++s) {
+        const std::size_t s_offset = local.index + s * offset;
+        for (std::size_t i0 = 0, I0 = r.ld[0]; i0 < I0; ++i0)
+          phi0[s_offset + i0] *= (r0 + i0 * dr);
+      }
     }
   }
   kpm_final_->Exchange_Boundaries();
@@ -557,28 +590,24 @@ void KPM_Vector<T, 2>::pairing(const T gamma_, const unsigned p_)
 
 template <typename T>
 template <unsigned MULT>
-void KPM_Vector<T, 2>::mult_bdg_terms(
-  const std::size_t cell_idx_,
-  const std::size_t b2_
-)
+void KPM_Vector<T, 2>::mult_bdg_terms(const std::size_t istr)
 {
   constexpr value_type order = MULT + 1;
-  const std::size_t offset = r.Orb * b2_ / 2;
-  for (std::size_t j = cell_idx_, J = cell_idx_ + TILE * std; j < J; j += std) {
-    for (std::size_t i = j; i < j + TILE; ++i) {
-      std::size_t idx_e = i;
-      std::size_t idx_h = idx_e + offset;
-      for (std::size_t io = 0, Io = r.Orb / 2; io < Io; ++io) {
-        const T ht = h.bdg.hartree(idx_e);
-        const T sd = h.bdg.s_delta(idx_e);
-        const T tmp_e = phiM1[idx_e] * ht + phiM1[idx_h] * sd;
-        const T tmp_h = -phiM1[idx_e] * sd - phiM1[idx_h] * ht;
-        phi0[idx_e] += order * tmp_e;
-        phi0[idx_h] += order * tmp_h;
-        idx_e += b2_;
-        idx_h += b2_;
+
+  const std::size_t i0 = ((istr) % (r.lStr[0])) * TILE + NGHOSTS;
+  const std::size_t i1 = ((istr) / r.lStr[0]) * TILE + NGHOSTS;
+  for (std::size_t io = 0; io < r.Orb; ++io) {
+    const std::size_t ip = io * x.basis[2];
+    const std::size_t j0 = ip + i0 + i1 * std;
+    const std::size_t j1 = j0 + TILE * std;
+    for (std::size_t j = j0; j < j1; j += std)
+      for (std::size_t i = j; i < j + TILE; ++i) {
+        const T ht = order * h.bdg.hartree(i);
+        const T sd = order * h.bdg.s_delta(i);
+        const std::size_t o = i + offset;
+        phi0[i] += phiM1[i] * ht + phiM1[o] * sd;
+        phi0[o] += phiM1[i] * myconj(sd) - phiM1[o] * ht;
       }
-    }
   }
 }
 
@@ -616,37 +645,33 @@ void KPM_Vector<T, 2>::KPM_MOTOR(KPM_Vector<T, 2> *kpm_final, unsigned axis)
 
         // Hoppings
         mult_regular_hoppings(j0, io);
-
-        // if (h.bdg.is_bdg) {
-        //   const std::size_t cell_idx = j0 - ip;
-        //   const std::size_t b2 = x.basis[2];
-        //   mult_bdg_terms<MULT>(cell_idx, b2);
-        // }
       }
+      if constexpr (is_bdg)
+        mult_bdg_terms<MULT>(istr);
       KPM_VectorBasis<T, 2u>::template multiply_defect<
         MULT, VELOCITY>(istr, phi0, phiM1, axis);
 
       // Empty the vacancies in the tile
-      auto &hV = h.hV.position.at(istr);
-      for (auto k = hV.begin(); k != hV.end(); k++)
-        phi0[*k] = 0.;
+      for (const auto &k : h.hV.position[istr]) {
+        phi0[k] = 0.;
+        if constexpr (is_bdg)
+          phi0[k + offset] = 0.;
+      }
     }
   }
-
-  for (auto vc = h.hV.vacancies_with_defects.begin();
-       vc != h.hV.vacancies_with_defects.end(); vc++)
-    phi0[*vc] = 0.;
-
+  for (const auto &vc : h.hV.vacancies_with_defects) {
+    phi0[vc] = 0.;
+    if constexpr (is_bdg)
+      phi0[vc + offset] = 0.;
+  }
   /*
      Broken Imputirities:
      The bulk domain will receive contributions from the broken defects
      located on the neighbour domains.
      We already subtract the vacancies from these contributions
   */
-
-  for (auto id = h.hd.begin(); id != h.hd.end(); id++)
-    id->template multiply_broken_defect<MULT, VELOCITY>(phi0, phiM1, axis);
-
+  for (auto &id : h.hd)
+    id.template multiply_broken_defect<MULT, VELOCITY>(phi0, phiM1, axis);
   kpm_final->Exchange_Boundaries();
 }
 template <typename T>
@@ -705,63 +730,62 @@ void KPM_Vector<T, 2>::Exchange_Boundaries()
   Coordinates<std::size_t, 3u> x(r.Ld), z(r.Lt);
   T *phi = v.col(index).data();
 
+  constexpr unsigned scale = is_bdg + 1;
   for (unsigned d = 0; d < 2; d++) {
-    std::size_t BSize = r.Orb * transf_max[d] * NGHOSTS;
-    T *ghosts_left = &simul.ghosts[0];
-    T *ghosts_right = &simul.ghosts[BSize];
+    const std::size_t sector_size = r.Orb * transf_max[d] * NGHOSTS;
+    const std::size_t BSize = sector_size * scale;
+    const std::size_t t_ghost = tile_ghosts[d];
+    T *target[2] = {&simul.ghosts[0], &simul.ghosts[BSize]};
 
-    for (std::size_t io = 0; io < r.Orb; io++) {
-      std::size_t il = MemIndBeg[d][0][io];
-      std::size_t ir = MemIndBeg[d][1][io];
+    for (unsigned s = 0; s < scale; ++s) {
+      const std::size_t r_offset = s * offset;
+      const std::size_t w_offset = s * sector_size;
+      for (std::size_t io = 0; io < r.Orb; ++io)
+        for (std::size_t dir = 0; dir < 2; ++dir) {
+          const std::size_t t_bound = transf_bound[d][dir];
+          std::size_t i_dir = MemIndBeg[d][dir][io] + r_offset;
 
-      for (std::size_t i = 0; i < transf_bound[d][0]; i++) {
-        for (unsigned ig = 0; ig < NGHOSTS; ig++)
-          ghosts_left[i + (ig + NGHOSTS * io) * transf_bound[d][0]] =
-            phi[il + ig * tile_ghosts[d]];
-        il += tile[d];
-      }
+          for (std::size_t i = 0; i < t_bound; ++i) {
+            const std::size_t tmp_idx = i + NGHOSTS * io * t_bound;
 
-      for (std::size_t i = 0; i < transf_bound[d][1]; i++) {
-        for (unsigned ig = 0; ig < NGHOSTS; ig++)
-          ghosts_right[i + (ig + NGHOSTS * io) * transf_bound[d][1]] =
-            phi[ir + ig * tile_ghosts[d]];
-        ir += tile[d];
-      }
+            for (unsigned ig = 0; ig < NGHOSTS; ++ig) {
+              const std::size_t w_idx = tmp_idx + ig * t_bound;
+              target[dir][w_idx + w_offset] = phi[i_dir + ig * t_ghost];
+            }
+            i_dir += tile[d];
+          }
+        }
     }
-
     // Copy the boundaries to the shared memory
     std::copy(
-      ghosts_left, ghosts_left + 2 * BSize,
+      target[0], target[0] + 2 * BSize,
       simul.Global.ghosts.begin() + 2 * BSize * r.thread_id
     );
 #pragma omp barrier
-    auto neigh_left = simul.Global.ghosts.begin() + 2 * block[d][0] * BSize;
-    auto neigh_right = simul.Global.ghosts.begin() + 2 * block[d][1] * BSize;
-    std::copy(
-      neigh_right, neigh_right + BSize, ghosts_right
-    ); // From the left to the right
-    std::copy(
-      neigh_left + BSize, neigh_left + 2 * BSize, ghosts_left
-    ); // From the right to the left
-
+    T *neigh[2] =
+      {simul.Global.ghosts.data() + 2 * block[d][0] * BSize,
+       simul.Global.ghosts.data() + 2 * block[d][1] * BSize};
+    for (std::size_t dir = 0; dir < 2; ++dir)
+      std::copy(neigh[dir], neigh[dir] + BSize, target[dir]);
 #pragma omp barrier
-    for (std::size_t io = 0; io < r.Orb; io++) {
-      std::size_t il = MemIndEnd[d][0][io];
-      std::size_t ir = MemIndEnd[d][1][io];
+    for (unsigned s = 0; s < scale; ++s) {
+      const std::size_t r_offset = s * offset;
+      const std::size_t w_offset = s * sector_size;
+      for (std::size_t io = 0; io < r.Orb; io++)
+        for (std::size_t dir = 0; dir < 2; ++dir) {
+          const std::size_t t_bound = transf_bound[d][dir];
+          std::size_t i_dir = MemIndBeg[d][dir][io] + r_offset;
 
-      for (std::size_t i = 0; i < transf_bound[d][0]; i++) {
-        for (int ig = 0; ig < NGHOSTS; ig++)
-          phi[il + ig * tile_ghosts[d]] =
-            ghosts_left[i + (ig + NGHOSTS * io) * transf_bound[d][0]];
-        il += tile[d];
-      }
+          for (std::size_t i = 0; i < t_bound; ++i) {
+            const std::size_t tmp_idx = i + NGHOSTS * io * t_bound;
 
-      for (std::size_t i = 0; i < transf_bound[d][1]; i++) {
-        for (int ig = 0; ig < NGHOSTS; ig++)
-          phi[ir + ig * tile_ghosts[d]] =
-            ghosts_right[i + (ig + NGHOSTS * io) * transf_bound[d][1]];
-        ir += tile[d];
-      }
+            for (unsigned ig = 0; ig < NGHOSTS; ++ig) {
+              const std::size_t w_idx = tmp_idx + ig * t_bound;
+              phi[i_dir + ig * t_ghost] = target[dir][w_idx + w_offset];
+            }
+            i_dir += tile[d];
+          }
+        }
     }
   }
 }
@@ -818,30 +842,30 @@ void KPM_Vector<T, 2>::empty_ghosts(int mem_index)
    * to the current thread are considered.
    * */
 
-  Coordinates<long, 3u> x(r.Ld);
+  Coordinates<std::size_t, 3u> x(r.Ld);
 
   // There are four sides, so set the ghosts in each side to zero individually.
   // Remember that the size of the ghost boundaries depends on NGHOSTS.
 
-  for (long io = 0; io < (long)r.Ld[2]; io++)
-    for (long i0 = 0; i0 < (long)r.Ld[0]; i0++)
-      for (int d = 0; d < NGHOSTS; d++)
-        v(x.set({i0, (long)d, io}).index, mem_index) *= 0;
+  for (std::size_t io = 0; io < Io; ++io)
+    for (std::size_t i0 = 0; i0 < r.Ld[0]; i0++)
+      for (unsigned d = 0; d < NGHOSTS; ++d)
+        v(x.set({i0, d, io}).index, mem_index) = 0;
 
-  for (long io = 0; io < (long)r.Ld[2]; io++)
-    for (long i0 = 0; i0 < (long)r.Ld[0]; i0++)
-      for (int d = 0; d < NGHOSTS; d++)
-        v(x.set({i0, (long)(r.Ld[1] - 1 - d), io}).index, mem_index) *= 0;
+  for (std::size_t io = 0; io < Io; ++io)
+    for (std::size_t i0 = 0; i0 < r.Ld[0]; i0++)
+      for (unsigned d = 0; d < NGHOSTS; ++d)
+        v(x.set({i0, r.Ld[1] - 1 - d, io}).index, mem_index) = 0;
 
-  for (long io = 0; io < (long)r.Ld[2]; io++)
-    for (long i1 = 0; i1 < (long)r.Ld[1]; i1++)
-      for (int d = 0; d < NGHOSTS; d++)
-        v(x.set({(long)d, i1, io}).index, mem_index) *= 0;
+  for (std::size_t io = 0; io < Io; ++io)
+    for (std::size_t i1 = 0; i1 < r.Ld[1]; i1++)
+      for (unsigned d = 0; d < NGHOSTS; ++d)
+        v(x.set({d, i1, io}).index, mem_index) = 0;
 
-  for (long io = 0; io < (long)r.Ld[2]; io++)
-    for (long i1 = 0; i1 < (long)r.Ld[1]; i1++)
-      for (int d = 0; d < NGHOSTS; d++)
-        v(x.set({(long)(r.Ld[0] - 1 - d), i1, io}).index, mem_index) *= 0;
+  for (std::size_t io = 0; io < Io; ++io)
+    for (std::size_t i1 = 0; i1 < r.Ld[1]; i1++)
+      for (unsigned d = 0; d < NGHOSTS; ++d)
+        v(x.set({r.Ld[0] - 1 - d, i1, io}).index, mem_index) = 0;
 }
 
 #define instantiateTYPE(type)                                                  \

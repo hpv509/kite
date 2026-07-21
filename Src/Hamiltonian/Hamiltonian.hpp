@@ -49,7 +49,6 @@ public:
   Eigen::Array<double, D, 1>
     BoundTwist; // Vector Containing Boundary Twist Angles
 
-  // BdG Extension
   HamiltonianBdG<T, D> bdg;
 
   // Custom Potential

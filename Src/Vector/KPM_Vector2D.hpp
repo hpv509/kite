@@ -25,7 +25,10 @@ private:
   T                       *phiM1;
   T                       *phiM2;
   const std::size_t          std;
+  const std::size_t          Io;
+  const std::size_t          offset;
 public:
+  static inline constexpr unsigned is_bdg = LatticeStructure<D>::is_bdg;
   using value_type = typename extract_scalar<T>::type;
   T *Fact_Bnd[D][3]; //3 Modos [Salto Positivo, Não Salto, Salto Negativo]
   using KPM_VectorBasis<T,2>::simul;
@@ -67,7 +70,7 @@ public:
     requires Real<T>
   {};
   template <unsigned MULT>
-  void mult_bdg_terms(const std::size_t, const std::size_t);
+  void mult_bdg_terms(const std::size_t);
   template <unsigned MULT, bool VELOCITY>
   void KPM_MOTOR(KPM_Vector<T, 2> *kpm_final, unsigned axis);
 
