@@ -62,11 +62,8 @@ public:
   void inline mult_local_disorder(const  std::size_t & j0, const  std::size_t & io);
   void inline mult_regular_hoppings(const  std::size_t & j0, const  std::size_t & io);
   void mult_position(const unsigned, KPM_Vector<T, 2> *);
-  template <int S>
-  void pairing(const T, const unsigned)
-    requires Complex<T>;
-  template <int S>
-  void pairing(const T, const unsigned)
+  template <int S, typename Derived>
+  void pairing(const T, Derived&& state_)
     requires Real<T>
   {};
   template <unsigned MULT>
@@ -81,5 +78,33 @@ public:
   void Exchange_Boundaries();
   void test_boundaries_system();
   void empty_ghosts(int mem_index);
+
+  template <int S, typename Derived> // S = -1: partition -> lattice, S = 1: lattice -> partition
+  void pairing(const T gamma_, Derived&& state_)
+    requires Complex<T>
+  {
+    constexpr value_type norm = 1 / std::sqrt(2);
+    const unsigned half_orb = r.Orb / 2;
+    const T gd = static_cast<T>(S) * gamma_;
+    const T gc = std::conj(gd);
+    Coordinates<std::size_t, 3> local(r.Ld);
+    for (unsigned io = 0; io < half_orb; ++io) {
+      const unsigned offset = half_orb * r.Nd;
+      for (unsigned i1 = NGHOSTS, I1 = r.Ld[1] - NGHOSTS; i1 < I1; ++i1) {
+	local.set({NGHOSTS, i1, io});
+	unsigned pair_0 = local.index;
+	unsigned pair_1 = pair_0 + offset;
+	for (std::size_t i0 = 0, I0 = r.ld[0]; i0 < I0; ++i0) {
+	  const T tmp_1 = state_.coeff(pair_0) + gc * state_.coeff(pair_1);
+	  const T tmp_2 = -gd * state_.coeff(pair_0) + state_.coeff(pair_1);
+	  state_.coeffRef(pair_0) = norm * tmp_1;
+	  state_.coeffRef(pair_1) = norm * tmp_2;
+	  ++pair_0;
+	  ++pair_1;
+	}
+      }
+    }
+#pragma omp barrier
+  }
 };
       

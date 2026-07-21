@@ -276,6 +276,23 @@ public:
     const std::size_t num_global_probes
   )
     requires Complex<T>;
+
+  // S-Wave
+  void calc_swave()
+    requires Complex<T>;
+  void calc_swave()
+    requires Real<T>
+  {};
+  
+  void s_wave(
+    const int,
+    const value_type,
+    const value_type,
+    const value_type,
+    const value_type,
+    const value_type
+  )
+    requires Complex<T>;
 };
 
 #endif

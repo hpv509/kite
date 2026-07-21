@@ -26,6 +26,9 @@ template <typename T>
 Eigen::Array<T, -1, 1> build_fermi(const T beta_, const T mu_);
 
 template <typename T>
+Eigen::Array<T, -1, 1> build_fermi_sqrt(const T beta_, const T mu_);
+
+template <typename T>
 Eigen::Array<std::complex<T>, -1, 1> build_dgreen(const std::complex<T>);
 } // namespace Coefficients
 

@@ -114,6 +114,39 @@ Eigen::Array<T, -1, 1> build_fermi(const T beta_, const T mu_)
 }
 
 template <typename T>
+Eigen::Array<T, -1, 1> build_fermi_sqrt(const T beta_, const T mu_)
+{
+  const unsigned Np = std::ceil(3.0 * beta_);
+  const unsigned itg_points = 10 * Np;
+
+  Eigen::Array<T, -1, 1> cheb_arcos(itg_points);
+  Eigen::Array<T, -1, 1> f(itg_points);
+  Eigen::Array<T, -1, 1> coef(Np);
+
+  for (unsigned i = 0; i < itg_points; ++i) {
+    cheb_arcos(i) = 0.5 * M_PI * (2 * i + 1) / itg_points;
+    const T argument = beta_ * ( std::cos(cheb_arcos(i)) - mu_ );
+
+    if (argument > 200)
+      f(i) = 0.0;
+    else if (argument < -200)
+      f(i) = 1.0;
+    else
+      f(i) = 1.0 / std::sqrt(1.0 + std::exp(argument));
+  }
+
+  for (unsigned m = 0; m < Np; ++m) {
+    T sum = 0.0;
+    for (unsigned i = 0; i < itg_points; ++i)
+      sum += std::cos(m * cheb_arcos(i)) * f(i);
+
+    coef(m) = 2.0 * sum * jackson<T>(m, Np) / itg_points;
+  }
+  coef(0) *= 0.5;
+  return coef;
+}
+
+template <typename T>
 Eigen::Array<std::complex<T>, -1, 1> build_dgreen(const std::complex<T> z_)
 {
   using cplx = std::complex<T>;
@@ -149,6 +182,8 @@ Eigen::Array<std::complex<T>, -1, 1> build_dgreen(const std::complex<T> z_)
   );                                                                           \
   template Eigen::Array<type, -1, 1>                                           \
   build_fermi<type>(const type, const type);                                   \
+  template Eigen::Array<type, -1, 1>                                           \
+  build_fermi_sqrt<type>(const type, const type);                              \
   template Eigen::Array<std::complex<type>, -1, 1> build_dgreen<type>(         \
     const std::complex<type>                                                   \
   );
