@@ -26,7 +26,7 @@ void Simulation<T, D>::calc_swave()
 #pragma omp master
   {
     H5::H5File *file = new H5::H5File(name, H5F_ACC_RDONLY);
-    Global.calculate_s_wave = false;
+    Global.calculate_s_wave =false;
     try {
       int dummy_variable;
       get_hdf5<
