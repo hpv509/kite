@@ -78,6 +78,7 @@ GlobalSimulation<T, D>::GlobalSimulation(char *name) : rglobal(name)
     simul.calc_custom_ss_two();
     simul.calc_lcm();
     simul.calc_st_lcm();
+    simul.calc_swave();
   }
   debug_message("Left global_simulation\n");
 }

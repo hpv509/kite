@@ -107,8 +107,8 @@ void Simulation<T, D>::s_wave(
 
   int iteration = 1;
   const int max_iteration = 100000;
-  Eigen::Array<value_type, -1, 1> sum_gamma(r.Sized / 2, 1);
-  Eigen::Array<value_type, -1, 1> sum_delta(r.Sized / 2, 1);
+  Eigen::Array<value_type, -1, 1> sum_gamma(r.Sized, 1);
+  Eigen::Array<value_type, -1, 1> sum_delta(r.Sized, 1);
   sum_gamma.setZero();
   sum_delta.setZero();
 
@@ -121,76 +121,82 @@ void Simulation<T, D>::s_wave(
 
   h.generate_disorder();
   KPM_Vector<T, D> phi(2, *this);
-  Eigen::Array<T, -1, 1> ket(r.Sized);
-  Eigen::Array<T, -1, 1> bra(r.Sized);
+  Eigen::Array<T, -1, 1> ket(2 * r.Sized);
+  Eigen::Array<T, -1, 1> bra(2 * r.Sized);
 
   // armazena no fim de cada ciclo de vetores aleatórios
-  Eigen::Array<value_type, -1, 1> results_gamma(r.Sized / 2, 1);
-  Eigen::Array<value_type, -1, 1> results_delta(r.Sized / 2, 1);
+  Eigen::Array<value_type, -1, 1> results_gamma(r.Sized, 1);
+  Eigen::Array<value_type, -1, 1> results_delta(r.Sized, 1);
 
-  while (iteration < max_iteration){
+  while (iteration < max_iteration)
+    {
 
-    results_gamma.setZero();
-    results_delta.setZero();
-    
-    for (int vec = 0; vec < randoms_; ++vec) {
-      h.generate_twists();
+      results_gamma.setZero();
+      results_delta.setZero();
       
-      // diagonal elements
-      
-      phi.initiate_phases();
-      phi.set_index(0);
-      phi.initiate_vector();
-      phi.v.col(0) *= std::sqrt(size);
-      bra = phi.v.col(0);
-      
-      ket.setZero();
-      phi.Exchange_Boundaries();
-      for (unsigned n = 0, N = coefs.size(); n < N; ++n) {
-	phi.cheb_iteration(n);
-	ket += coefs(n) * phi.v.col(phi.get_index()).array();
+      for (int vec = 0; vec < randoms_; ++vec) {
+	h.generate_twists();
+	
+	// diagonal elements
+	
+	phi.initiate_phases();
+	phi.set_index(0);
+	phi.initiate_vector();
+	phi.v.col(0) *= std::sqrt(size);
+	bra = phi.v.col(0);
+	
+	ket.setZero();
+	phi.Exchange_Boundaries();
+	for (unsigned n = 0, N = coefs.size(); n < N; ++n)
+	  {
+	    phi.cheb_iteration(n);
+	    ket += coefs(n) * phi.v.col(phi.get_index()).array();
+	  }
+	
+	const Eigen::Array<value_type, -1, 1> map_gamma =
+	  u * (bra.conjugate() * ket).abs2().head(r.Sized) - mu;
+	const value_type weight = 1.0 / (vec + 1);
+	results_gamma += weight * (map_gamma - results_gamma);
+	
+	// off-diagonal elements
+	
+	phi.v.setZero();
+	phi.set_index(0);
+	phi.v.col(0) = bra.matrix();
+	
+	phi.template pairing<-1>(T(1.0), phi.v.col(0));
+	
+	ket.setZero();
+	phi.Exchange_Boundaries();
+	
+	for (unsigned n = 0, N = coefs.size(); n < N; ++n)
+	  {
+	    phi.cheb_iteration(n);
+	    ket += coefs(n) * phi.v.col(phi.get_index()).array();
+	  }
+	
+	phi.template pairing<1>(T(1.0), ket);
+	
+	const Eigen::Array<value_type, -1, 1> map_delta =
+	  value_type(0.5) * u * ( (bra.conjugate() * ket).abs2().head(r.Sized)
+				  - (bra.conjugate() * ket).abs2().tail(r.Sized) );
+	results_delta += weight * (map_delta - results_delta);
       }
       
-      const Eigen::Array<value_type, -1, 1> map_gamma =
-	u * (bra.conjugate() * ket).abs2().head(r.Sized/2);
-      const value_type weight = 1.0 / (vec + 1);
-      results_gamma += weight * (map_gamma - results_gamma);
+      weight_avg *= 1.0 + weight_r / std::pow(value_type(iteration), weight_alpha);
+      weight_sum += weight_avg;
       
-      // off-diagonal elements
+      sum_gamma += weight_avg * results_gamma;
+      sum_delta += weight_avg * results_delta;
       
-      phi.v.setZero();
-      phi.set_index(0);
-      phi.v.col(0) = bra.matrix();
+      h.bdg.hartree = sum_gamma / weight_sum;
+      h.bdg.s_delta = sum_delta / weight_sum;
       
-      phi.template pairing<-1>(T(1.0), phi.v.col(0));
-      
-      ket.setZero();
-      phi.Exchange_Boundaries();
-      
-      for (unsigned n = 0, N = coefs.size(); n < N; ++n) {
-	phi.cheb_iteration(n);
-	ket += coefs(n) * phi.v.col(phi.get_index()).array();
-      }
-      
-      phi.template pairing<1>(T(1.0), ket);
-      
-      const Eigen::Array<value_type, -1, 1> map_delta =
-	value_type(0.5) * u * ( (bra.conjugate() * ket).abs2().head(r.Sized/2)
-				- (bra.conjugate() * ket).abs2().tail(r.Sized/2) );
-      results_delta += weight * (map_delta - results_delta);
+      ++iteration;
     }
-    
-    weight_avg *= 1.0 + weight_r / std::pow(value_type(iteration), weight_alpha);
-    weight_sum += weight_avg;
-    
-    sum_gamma += weight_avg * results_gamma;
-    sum_delta += weight_avg * results_delta;
-    
-    h.bdg.hartree = sum_gamma / weight_sum;
-    h.bdg.s_delta = sum_delta / weight_sum;
 
-    ++iteration;
-  }
+  h.bdg.hartree += mu;
+  store_s_wave();
 }
 
 template <typename T, unsigned D>

@@ -84,16 +84,14 @@ public:
     requires Complex<T>
   {
     constexpr value_type norm = 1 / std::sqrt(2);
-    const unsigned half_orb = r.Orb / 2;
     const T gd = static_cast<T>(S) * gamma_;
     const T gc = std::conj(gd);
     Coordinates<std::size_t, 3> local(r.Ld);
-    for (unsigned io = 0; io < half_orb; ++io) {
-      const unsigned offset = half_orb * r.Nd;
+    for (unsigned io = 0; io < r.Orb; ++io) {
       for (unsigned i1 = NGHOSTS, I1 = r.Ld[1] - NGHOSTS; i1 < I1; ++i1) {
 	local.set({NGHOSTS, i1, io});
 	unsigned pair_0 = local.index;
-	unsigned pair_1 = pair_0 + offset;
+	unsigned pair_1 = pair_0 + r.offset;
 	for (std::size_t i0 = 0, I0 = r.ld[0]; i0 < I0; ++i0) {
 	  const T tmp_1 = state_.coeff(pair_0) + gc * state_.coeff(pair_1);
 	  const T tmp_2 = -gd * state_.coeff(pair_0) + state_.coeff(pair_1);
