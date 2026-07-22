@@ -154,7 +154,7 @@ void Simulation<T, D>::s_wave(
 	  }
 	
 	const Eigen::Array<value_type, -1, 1> map_gamma =
-	  u * (bra.conjugate() * ket).abs2().head(r.Sized) - mu;
+	  u * (bra.conjugate() * ket).abs2().head(r.Sized);
 	const value_type weight = 1.0 / (vec + 1);
 	results_gamma += weight * (map_gamma - results_gamma);
 	

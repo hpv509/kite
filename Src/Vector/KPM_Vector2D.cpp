@@ -736,8 +736,8 @@ void KPM_Vector<T, 2>::Exchange_Boundaries()
     T *neigh[2] =
       {simul.Global.ghosts.data() + 2 * block[d][0] * BSize,
        simul.Global.ghosts.data() + 2 * block[d][1] * BSize};
-    for (std::size_t dir = 0; dir < 2; ++dir)
-      std::copy(neigh[dir], neigh[dir] + BSize, target[dir]);
+    std::copy(neigh[0] + BSize, neigh[0] + 2 * BSize, target[0]);
+    std::copy(neigh[1], neigh[1] + BSize, target[1]);
 #pragma omp barrier
     for (unsigned s = 0; s < scale; ++s) {
       const std::size_t r_offset = s * offset;
@@ -745,7 +745,7 @@ void KPM_Vector<T, 2>::Exchange_Boundaries()
       for (std::size_t io = 0; io < r.Orb; io++)
         for (std::size_t dir = 0; dir < 2; ++dir) {
           const std::size_t t_bound = transf_bound[d][dir];
-          std::size_t i_dir = MemIndBeg[d][dir][io] + r_offset;
+	  std::size_t i_dir = MemIndEnd[d][dir][io] + r_offset;
 
           for (std::size_t i = 0; i < t_bound; ++i) {
             const std::size_t tmp_idx = i + NGHOSTS * io * t_bound;
