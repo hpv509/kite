@@ -471,6 +471,11 @@ class Modification:
 class Calculation:
 
     @property
+    def get_s_wave(self):
+        """Returns the requested s-wave calculation."""
+        return self._s_wave
+
+    @property
     def get_dos(self):
         """Returns the requested DOS functions."""
         return self._dos
@@ -570,6 +575,7 @@ class Calculation:
 
         self._scaling_factor = configuration.energy_scale
         self._energy_shift = configuration.energy_shift
+        self._s_wave                         = []
         self._dos                            = []
         self._ldos                           = []
         self._ldos_map                       = []
@@ -597,6 +603,34 @@ class Calculation:
                                 'yzy': 16, 'yzz': 17, 'zxx': 18, 'zxy': 19, 'zxz': 20, 'zyx': 21, 'zyy': 22, 'zyz': 23,
                                 'zzx': 24, 'zzy': 25, 'zzz': 26}
         self._avail_dir_sngl = {'xx': 0, 'yy': 1, 'zz': 2}
+
+    def s_wave(self, num_random, beta, chemical_potential, u, gamma, delta):
+        """Self-consistent onsite s-wave BdG calculation.
+
+        Parameters
+        ----------
+        num_random : int
+            Number of random vectors.
+        beta : float
+            Inverse of temperature.
+        chemical_potential : float
+            Chemical potential.
+        u : float
+            Onsite interactions strength.
+        gamma : float
+            Hartree density.
+        delta : float
+            Pairing term.
+        """
+
+        self._s_wave.append({
+            'num_random': num_random,
+            'beta': beta,
+            'chemical_potential': chemical_potential,
+            'u': u,
+            'gamma': gamma,
+            'delta': delta
+        })
 
     def dos(self, num_points, num_moments, num_random, num_disorder=1):
         """Calculate the density of states as a function of energy
@@ -1735,6 +1769,21 @@ def config_system(lattice, config, calculation, modification=None, **kwargs):
 
     # Calculation function defined with num_moments, num_random vectors, and num_disorder etc. realisations
     grpc = f.create_group('Calculation')
+    if calculation.get_s_wave:
+        if len(calculation.get_s_wave) > 1:
+            raise SystemExit('Only a single s-wave calculation is currently allowed.')
+
+        single_s_wave = calculation.get_s_wave[0]
+
+        grpc_p = grpc.create_group('s_wave')
+        grpc_p.create_dataset('NumRandoms', data=single_s_wave['num_random'], dtype=np.int32)
+        grpc_p.create_dataset('Beta', data=single_s_wave['beta'], dtype=np.float64)
+        grpc_p.create_dataset('ChemicalPotential', data=single_s_wave['chemical_potential'], dtype=np.float64)
+        grpc_p.create_dataset('U', data=single_s_wave['u'], dtype=np.float64)
+        grpc_p.create_dataset('Gamma', data=single_s_wave['gamma'], dtype=np.float64)
+        grpc_p.create_dataset('Delta', data=single_s_wave['delta'], dtype=np.float64)
+
+
     if calculation.get_dos:
         grpc_p = grpc.create_group('dos')
 

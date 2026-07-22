@@ -98,15 +98,14 @@ void Simulation<T, D>::s_wave(
   const value_type delta = delta_ / energy_scale;
 
   const value_type size = r.Sizet - r.SizetVacancies;
-
-  // falta escrever esta função
+  
   const Eigen::Array<value_type, -1, 1> coefs =
     Coefficients::build_fermi_sqrt<value_type>(beta, value_type(0.0));
   
   h.bdg.init_fields(delta, gamma, mu);
 
   int iteration = 1;
-  const int max_iteration = 100000;
+  const int max_iteration = 128;
   Eigen::Array<value_type, -1, 1> sum_gamma(r.Sized, 1);
   Eigen::Array<value_type, -1, 1> sum_delta(r.Sized, 1);
   sum_gamma.setZero();
@@ -124,11 +123,10 @@ void Simulation<T, D>::s_wave(
   Eigen::Array<T, -1, 1> ket(2 * r.Sized);
   Eigen::Array<T, -1, 1> bra(2 * r.Sized);
 
-  // armazena no fim de cada ciclo de vetores aleatórios
   Eigen::Array<value_type, -1, 1> results_gamma(r.Sized, 1);
   Eigen::Array<value_type, -1, 1> results_delta(r.Sized, 1);
 
-  while (iteration < max_iteration)
+  while (iteration <= max_iteration)
     {
 
       results_gamma.setZero();
@@ -196,11 +194,11 @@ void Simulation<T, D>::s_wave(
     }
 
   h.bdg.hartree += mu;
-  store_s_wave();
+  store_s_wave(energy_scale);
 }
 
 template <typename T, unsigned D>
-void Simulation<T, D>::store_s_wave()
+void Simulation<T, D>::store_s_wave(const value_type energy_scale_)
   requires Complex<T>
 {
   debug_message("Entered store_swave\n");
@@ -223,8 +221,8 @@ void Simulation<T, D>::store_s_wave()
       else if constexpr (D == 3)
         local.set({i[2], i[1], i[0], io});
       r.convertCoordinates(global, local);
-      Global.s_wave_map(global.index,0) = h.bdg.hartree(local.index);
-      Global.s_wave_map(global.index,1) = h.bdg.s_delta(local.index);
+      Global.s_wave_map(global.index,0) = h.bdg.hartree(local.index) * energy_scale_;
+      Global.s_wave_map(global.index,1) = h.bdg.s_delta(local.index) * energy_scale_;
     };
     UnitCellLoop<D>::run(idx, start, final, body);
   }

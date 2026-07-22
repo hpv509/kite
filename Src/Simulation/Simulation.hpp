@@ -294,9 +294,9 @@ public:
   )
     requires Complex<T>;
 
-  void store_s_wave()
+  void store_s_wave(const value_type energy_scale)
     requires Complex<T>;
-  void store_s_wave()
+  void store_s_wave(const value_type energy_scale)
     requires Real<T>;
 };
 
