@@ -293,6 +293,11 @@ public:
     const value_type
   )
     requires Complex<T>;
+
+  void store_s_wave()
+    requires Complex<T>;
+  void store_s_wave()
+    requires Real<T>;
 };
 
 #endif

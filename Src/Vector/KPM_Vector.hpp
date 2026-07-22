@@ -68,6 +68,11 @@ public:
   void empty_ghosts(int mem_index);
   template <unsigned MULT, bool VELOCITY>  
   void multiply_defect(std::size_t , T* & , T* & , unsigned axis);
+
+  template <int S, typename Derived>
+  void pairing(const T, Derived&&)
+    requires Complex<T>
+  {};
 };
 
 

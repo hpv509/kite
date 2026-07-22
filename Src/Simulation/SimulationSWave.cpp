@@ -192,3 +192,50 @@ void Simulation<T, D>::s_wave(
     ++iteration;
   }
 }
+
+template <typename T, unsigned D>
+void Simulation<T, D>::store_s_wave()
+  requires Complex<T>
+{
+  debug_message("Entered store_swave\n");
+  Coordinates<std::size_t, D + 1> global(r.Lt);
+  Coordinates<std::size_t, D + 1> local(r.Ld);
+#pragma omp master
+  Global.s_wave_map.resize(r.Sizet, 2);
+#pragma omp barrier
+  std::array<unsigned, D> idx;
+  std::array<unsigned, D> start;
+  std::array<unsigned, D> final;
+  for (unsigned d = 0; d < D; ++d) {
+    start[d] = NGHOSTS;
+    final[d] = r.Ld[D - 1 - d] - NGHOSTS;
+  }
+  for (unsigned io = 0, Io = r.Orb; io < Io; ++io) {
+    auto body = [&](const std::array<unsigned, D> &i) {
+      if constexpr (D == 2)
+        local.set({i[1], i[0], io});
+      else if constexpr (D == 3)
+        local.set({i[2], i[1], i[0], io});
+      r.convertCoordinates(global, local);
+      Global.s_wave_map(global.index,0) = h.bdg.hartree(local.index);
+      Global.s_wave_map(global.index,1) = h.bdg.s_delta(local.index);
+    };
+    UnitCellLoop<D>::run(idx, start, final, body);
+  }
+#pragma omp barrier
+#pragma omp master
+  {
+    const Eigen::Array<value_type, -1, -1> s_wave_r = Global.s_wave_map.real();
+    H5::H5File *file = new H5::H5File(name, H5F_ACC_RDWR);
+    char buffer[200];
+    std::sprintf(buffer, "/Calculation/s_wave/Map");
+    const std::string name(buffer);
+    write_hdf5(s_wave_r, file, name);
+    delete file;
+  }
+#pragma omp barrier
+  debug_message("Left store_swave\n");
+}
+
+#define instantiate(type, dim) template class Simulation<type, dim>;
+#include "instantiate.hpp"
