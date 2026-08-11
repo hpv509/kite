@@ -11,10 +11,10 @@ U = -3.0
 mu = 0.5
 beta = 20.0
 
-Lx = 32
-Ly = 32
+Lx = 16
+Ly = 16
 
-num_random = 32
+num_random = 8
 delta_initial = 0.5
 
 filename = "ochoa_swave.h5"

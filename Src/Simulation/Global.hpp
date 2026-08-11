@@ -8,6 +8,8 @@
 template <typename T>
 struct GLOBAL_VARIABLES {
   std::vector<T> ghosts;
+  std::vector<T> nn_pairing_state;
+  std::vector<T> nn_pairing_result;
   std::vector<std::size_t>    element1;
   std::vector<std::ptrdiff_t> element2_diff;
   std::vector<T> hopping;
@@ -30,6 +32,7 @@ struct GLOBAL_VARIABLES {
   Eigen::Array <double,3,1> GlobBTwist; // Glob Boundary Twist Angles
   Eigen::Array<T, -1, -1> ldos_map;
   Eigen::Array<T, -1, -1> s_wave_map;
+  Eigen::Array<T, -1, -1> p_wave_map;
   Eigen::Array<T, -1, -1> localized_wavepacket;
   Eigen::Array<T, -1, -1> results_1;
   Eigen::Array<T, -1, -1> results_2;
@@ -58,6 +61,7 @@ struct GLOBAL_VARIABLES {
   bool calculate_lcm;
   bool calculate_st_lcm;
   bool calculate_s_wave;
+  bool calculate_p_wave;
 
   GLOBAL_VARIABLES();
   void addbond ( std::size_t, std::ptrdiff_t, T );

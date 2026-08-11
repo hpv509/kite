@@ -36,6 +36,13 @@ GlobalSimulation<T, D>::GlobalSimulation(char *name) : rglobal(name)
   Global.ghosts.resize(global_ghost_size);
   std::fill(Global.ghosts.begin(), Global.ghosts.end(), 0);
 
+  const std::size_t global_nn_pairing_size =
+    (LatticeStructure<D>::is_bdg + 1) * rglobal.Sizet;
+  Global.nn_pairing_state.resize(global_nn_pairing_size);
+  std::fill(Global.nn_pairing_state.begin(), Global.nn_pairing_state.end(), T(0));
+  Global.nn_pairing_result.resize(global_nn_pairing_size);
+  std::fill(Global.nn_pairing_result.begin(), Global.nn_pairing_result.end(), T(0));
+
   std::string path;
   H5::H5File file(name, H5F_ACC_RDONLY);
   path = "/EnergyScale";
@@ -79,6 +86,7 @@ GlobalSimulation<T, D>::GlobalSimulation(char *name) : rglobal(name)
     simul.calc_lcm();
     simul.calc_st_lcm();
     simul.calc_swave();
+    simul.calc_pwave();
   }
   debug_message("Left global_simulation\n");
 }

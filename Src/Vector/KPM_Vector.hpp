@@ -73,6 +73,12 @@ public:
   void pairing(const T, Derived&&)
     requires Complex<T>
   {};
+
+  template <int S, typename Derived>
+  void pairing_nn(const T, const unsigned, Derived&&)
+    requires Complex<T>
+  {};
+  
 };
 
 

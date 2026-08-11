@@ -104,5 +104,124 @@ public:
     }
 #pragma omp barrier
   }
-};
+  
+  template <int S, typename Derived> // S = -1: partition -> lattice, S = 1: lattice -> partition
+  void pairing_nn(const T gamma_, const unsigned hopping_, Derived&& state_)
+    requires Complex<T>
+  {
+    static_assert(S == -1 || S == 1);
+    
+    constexpr value_type norm = 1 / std::sqrt(2);
+    const T gd = static_cast<T>(S) * gamma_;
+    const T gc = std::conj(gd);
+    
+    auto& global_state = simul.Global.nn_pairing_state;
+    auto& global_result = simul.Global.nn_pairing_result;
+    Coordinates<std::size_t, 3> local(r.Ld);
+    Coordinates<std::size_t, 3> global(r.Lt);
+    
+    for (unsigned io = 0; io < r.Orb; ++io) {
+      for (unsigned i1 = NGHOSTS; i1 < r.Ld[1] - NGHOSTS; ++i1) {
+	for (unsigned i0 = NGHOSTS; i0 < r.Ld[0] - NGHOSTS; ++i0) {
+	  local.set({i0, i1, io});
+	  r.convertCoordinates(global, local);
+	  global_state[global.index] = state_.coeff(local.index);
+	  global_state[global.index + r.Sizet] = state_.coeff(local.index + r.offset);
+	}
+      }
+    }
+    
+#pragma omp barrier
+    
+#pragma omp master
+    {
+      std::copy(global_state.begin(), global_state.end(), global_result.begin());
       
+      Coordinates<std::ptrdiff_t, 3> bond(r.lB3);
+      Coordinates<std::size_t, 3> site_i(r.Lt);
+      Coordinates<std::size_t, 3> site_j(r.Lt);
+      
+      for (unsigned io = 0; io < r.Orb; ++io) {
+	if (hopping_ >= h.hr.NHoppings(io)) {
+	  continue;
+	}
+	
+	bond.set_coord(h.hr.dist(hopping_, io));
+	
+	const std::ptrdiff_t dx = bond.coord[0] - 1;
+	const std::ptrdiff_t dy = bond.coord[1] - 1;
+	const unsigned jo = static_cast<unsigned>(bond.coord[2]);
+	
+	for (unsigned i1 = 0; i1 < r.Lt[1]; ++i1) {
+	  for (unsigned i0 = 0; i0 < r.Lt[0]; ++i0) {
+	    
+	    std::ptrdiff_t j0 = static_cast<std::ptrdiff_t>(i0) + dx;
+	    std::ptrdiff_t j1 = static_cast<std::ptrdiff_t>(i1) + dy;
+	    
+	    // open-boundaries check
+	    if (r.Bd[0] == 0 && (j0 < 0 || j0 >= static_cast<std::ptrdiff_t>(r.Lt[0])))
+	      continue;
+	    if (r.Bd[1] == 0 && (j1 < 0 || j1 >= static_cast<std::ptrdiff_t>(r.Lt[1])))
+	      continue;
+
+	    // periodic wrapping
+	    j0 = (j0 + static_cast<std::ptrdiff_t>(r.Lt[0]))
+	      % static_cast<std::ptrdiff_t>(r.Lt[0]);
+	    j1 = (j1 + static_cast<std::ptrdiff_t>(r.Lt[1]))
+	      % static_cast<std::ptrdiff_t>(r.Lt[1]);
+	    
+	    site_i.set({i0, i1, io});
+	    site_j.set({static_cast<std::size_t>(j0), static_cast<std::size_t>(j1), jo});
+	    
+	    const std::size_t pair_0 = site_i.index;
+	    const std::size_t pair_1 = site_j.index + r.Sizet;
+	    const std::size_t partition_pair_1 = site_i.index + r.Sizet;
+
+	    std::size_t input_0;
+	    std::size_t input_1;
+	    std::size_t output_0;
+	    std::size_t output_1;
+	    
+	    if constexpr (S == -1)
+	      {
+		input_0 = pair_0;
+		input_1 = partition_pair_1;
+		output_0 = pair_0;
+		output_1 = pair_1;
+	      }
+	    else
+	      {
+		input_0 = pair_0;
+		input_1 = pair_1;
+		output_0 = pair_0;
+		output_1 = partition_pair_1;
+	      }
+	    
+	    const T tmp_1 = global_state[input_0] + gc * global_state[input_1];
+	    const T tmp_2 = -gd * global_state[input_0] + global_state[input_1];
+	    
+	    global_result[output_0] = norm * tmp_1;
+	    global_result[output_1] = norm * tmp_2;
+	  }
+	}
+      }
+    }
+    
+#pragma omp barrier
+    
+    for (unsigned io = 0; io < r.Orb; ++io) {
+      for (unsigned i1 = NGHOSTS; i1 < r.Ld[1] - NGHOSTS; ++i1) {
+	for (unsigned i0 = NGHOSTS; i0 < r.Ld[0] - NGHOSTS; ++i0) {
+	  local.set({i0, i1, io});
+	  r.convertCoordinates(global, local);
+	  state_.coeffRef(local.index) = global_result[global.index];
+	  state_.coeffRef(local.index + r.offset) = global_result[global.index + r.Sizet];
+	}
+      }
+    }
+    
+#pragma omp barrier
+  }
+    
+};
+

@@ -31,7 +31,7 @@ Hamiltonian<T, D>::Hamiltonian(
   hr(name, r),
   cross_mozaic(r.NStr),
   hV(name, rr, rnd),
-  bdg(r.Sized)
+  bdg(r.Sized, static_cast<std::size_t>(hr.NHoppings.maxCoeff()))
 {
 #pragma omp critical
   {

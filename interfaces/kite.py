@@ -476,6 +476,11 @@ class Calculation:
         return self._s_wave
 
     @property
+    def get_p_wave(self):
+        """Returns the requested p-wave calculation."""
+        return self._p_wave
+
+    @property
     def get_dos(self):
         """Returns the requested DOS functions."""
         return self._dos
@@ -576,6 +581,7 @@ class Calculation:
         self._scaling_factor = configuration.energy_scale
         self._energy_shift = configuration.energy_shift
         self._s_wave                         = []
+        self._p_wave                         = []
         self._dos                            = []
         self._ldos                           = []
         self._ldos_map                       = []
@@ -630,6 +636,40 @@ class Calculation:
             'u': u,
             'gamma': gamma,
             'delta': delta
+        })
+
+    def p_wave(self, num_random, beta, chemical_potential, u, v, gamma, s_delta, nn_delta):
+        """Self-consistent nearest-neighbour BdG calculation.
+
+        Parameters
+        ----------
+        num_random : int
+            Number of random vectors.
+        beta : float
+            Inverse of temperature.
+        chemical_potential : float
+            Chemical potential.
+        u: float
+            On-site interaction strength.
+        v : float
+            Nearest-neighbour interaction strength.
+        gamma : float
+            Hartree density.
+        s_delta : float
+            On-site pairing term.
+        nn_delta : float
+            Nearest-neighbour pairing term.
+        """
+
+        self._p_wave.append({
+            'num_random': num_random,
+            'beta': beta,
+            'chemical_potential': chemical_potential,
+            'u': u,
+            'v': v,
+            'gamma': gamma,
+            's_delta': s_delta,
+            'nn_delta': nn_delta
         })
 
     def dos(self, num_points, num_moments, num_random, num_disorder=1):
@@ -1329,6 +1369,11 @@ def config_system(lattice, config, calculation, modification=None, **kwargs):
         config._is_complex = 1
         config.set_type()
 
+    if (calculation.get_s_wave or calculation.get_p_wave) and complx == 0:
+        print('A superconducting BdG calculation was requested, but is_complex is 0. Automatically turning is_complex to 1!')
+        config._is_complex = 1
+        config.set_type()
+
 
     # hamiltonian is complex 1 or real 0
     complx = int(config.comp)
@@ -1783,6 +1828,21 @@ def config_system(lattice, config, calculation, modification=None, **kwargs):
         grpc_p.create_dataset('Gamma', data=single_s_wave['gamma'], dtype=np.float64)
         grpc_p.create_dataset('Delta', data=single_s_wave['delta'], dtype=np.float64)
 
+    if calculation.get_p_wave:
+        if len(calculation.get_p_wave) > 1:
+            raise SystemExit('Only a single p-wave calculation is currently allowed.')
+
+        single_p_wave = calculation.get_p_wave[0]
+
+        grpc_p = grpc.create_group('p_wave')
+        grpc_p.create_dataset('NumRandoms', data=single_p_wave['num_random'], dtype=np.int32)
+        grpc_p.create_dataset('Beta', data=single_p_wave['beta'], dtype=np.float64)
+        grpc_p.create_dataset('ChemicalPotential', data=single_p_wave['chemical_potential'], dtype=np.float64)
+        grpc_p.create_dataset('U', data=single_p_wave['u'], dtype=np.float64)
+        grpc_p.create_dataset('V', data=single_p_wave['v'], dtype=np.float64)
+        grpc_p.create_dataset('Gamma', data=single_p_wave['gamma'], dtype=np.float64)
+        grpc_p.create_dataset('SDelta', data=single_p_wave['s_delta'], dtype=np.float64)
+        grpc_p.create_dataset('NNDelta', data=single_p_wave['nn_delta'], dtype=np.float64)
 
     if calculation.get_dos:
         grpc_p = grpc.create_group('dos')

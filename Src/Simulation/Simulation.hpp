@@ -298,6 +298,30 @@ public:
     requires Complex<T>;
   void store_s_wave(const value_type energy_scale)
     requires Real<T>;
+
+  // P-Wave; Nearest-Neighbor Spin-Singlet Pairing
+  void calc_pwave()
+    requires Complex<T>;
+  void calc_pwave()
+    requires Real<T>
+  {};
+  
+  void p_wave(
+    const int,
+    const value_type,
+    const value_type,
+    const value_type,
+    const value_type,
+    const value_type,
+    const value_type,
+    const value_type
+  )
+    requires Complex<T>;
+
+  void store_p_wave(const value_type energy_scale)
+    requires Complex<T>;
+  void store_p_wave(const value_type energy_scale)
+    requires Real<T>;
 };
 
 #endif

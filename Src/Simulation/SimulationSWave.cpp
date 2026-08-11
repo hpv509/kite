@@ -107,7 +107,7 @@ void Simulation<T, D>::s_wave(
   int iteration = 1;
   const int max_iteration = 128;
   Eigen::Array<value_type, -1, 1> sum_gamma(r.Sized, 1);
-  Eigen::Array<value_type, -1, 1> sum_delta(r.Sized, 1);
+  Eigen::Array<T, -1, 1> sum_delta(r.Sized, 1);
   sum_gamma.setZero();
   sum_delta.setZero();
 
@@ -124,8 +124,8 @@ void Simulation<T, D>::s_wave(
   Eigen::Array<T, -1, 1> bra(2 * r.Sized);
 
   Eigen::Array<value_type, -1, 1> results_gamma(r.Sized, 1);
-  Eigen::Array<value_type, -1, 1> results_delta(r.Sized, 1);
-
+  Eigen::Array<T, -1, 1> results_delta(r.Sized, 1);
+  
   while (iteration <= max_iteration)
     {
 
@@ -152,11 +152,13 @@ void Simulation<T, D>::s_wave(
 	  }
 	
 	const Eigen::Array<value_type, -1, 1> map_gamma =
-	  u * (bra.conjugate() * ket).abs2().head(r.Sized);
+	  u * (bra.conjugate() * ket).abs2().head(r.Sized) - mu;
 	const value_type weight = 1.0 / (vec + 1);
 	results_gamma += weight * (map_gamma - results_gamma);
 	
 	// off-diagonal elements
+
+	// gamma = 1
 	
 	phi.v.setZero();
 	phi.set_index(0);
@@ -175,9 +177,39 @@ void Simulation<T, D>::s_wave(
 	
 	phi.template pairing<1>(T(1.0), ket);
 	
-	const Eigen::Array<value_type, -1, 1> map_delta =
-	  value_type(0.5) * u * ( (bra.conjugate() * ket).abs2().head(r.Sized)
-				  - (bra.conjugate() * ket).abs2().tail(r.Sized) );
+	const Eigen::Array<value_type, -1, 1> upsilon_1 =
+	  (bra.conjugate() * ket).abs2().head(r.Sized)
+	  -
+	  (bra.conjugate() * ket).abs2().tail(r.Sized);
+
+	// gamma = i
+
+	phi.v.setZero();
+	phi.set_index(0);
+	phi.v.col(0) = bra.matrix();
+	
+	phi.template pairing<-1>(T(0.0, 1.0), phi.v.col(0));
+	
+	ket.setZero();
+	phi.Exchange_Boundaries();
+	
+	for (unsigned n = 0, N = coefs.size(); n < N; ++n)
+	  {
+	    phi.cheb_iteration(n);
+	    ket += coefs(n) * phi.v.col(phi.get_index()).array();
+	  }
+	
+	phi.template pairing<1>(T(0.0, 1.0), ket);
+	
+	const Eigen::Array<value_type, -1, 1> upsilon_i =
+	  (bra.conjugate() * ket).abs2().head(r.Sized)
+	  -
+	  (bra.conjugate() * ket).abs2().tail(r.Sized);
+
+	Eigen::Array<T, -1, 1> map_delta(r.Sized);
+	map_delta.real() = value_type(0.5) * u * upsilon_1;
+	map_delta.imag() = - value_type(0.5) * u * upsilon_i;
+	
 	results_delta += weight * (map_delta - results_delta);
       }
       
@@ -205,7 +237,7 @@ void Simulation<T, D>::store_s_wave(const value_type energy_scale_)
   Coordinates<std::size_t, D + 1> global(r.Lt);
   Coordinates<std::size_t, D + 1> local(r.Ld);
 #pragma omp master
-  Global.s_wave_map.resize(r.Sizet, 2);
+  Global.s_wave_map.resize(r.Sizet, 3);
 #pragma omp barrier
   std::array<unsigned, D> idx;
   std::array<unsigned, D> start;
@@ -221,8 +253,12 @@ void Simulation<T, D>::store_s_wave(const value_type energy_scale_)
       else if constexpr (D == 3)
         local.set({i[2], i[1], i[0], io});
       r.convertCoordinates(global, local);
-      Global.s_wave_map(global.index,0) = h.bdg.hartree(local.index) * energy_scale_;
-      Global.s_wave_map(global.index,1) = h.bdg.s_delta(local.index) * energy_scale_;
+      Global.s_wave_map(global.index,0) =
+	h.bdg.hartree(local.index) * energy_scale_;
+      Global.s_wave_map(global.index,1) =
+	std::real(h.bdg.s_delta(local.index)) * energy_scale_;
+      Global.s_wave_map(global.index,2) =
+	std::imag(h.bdg.s_delta(local.index)) * energy_scale_;
     };
     UnitCellLoop<D>::run(idx, start, final, body);
   }

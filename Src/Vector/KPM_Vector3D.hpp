@@ -75,31 +75,159 @@ void pairing(const T gamma_, Derived&& state_)
   requires Complex<T>
 {
   constexpr value_type norm = 1 / std::sqrt(2);
-  const unsigned half_orb = r.Orb / 2;
   const T gd = static_cast<T>(S) * gamma_;
   const T gc = std::conj(gd);
   Coordinates<std::size_t, 4> local(r.Ld);
-  for (unsigned io = 0; io < half_orb; ++io) {
-    const unsigned offset = half_orb * r.Nd;
+  for (unsigned io = 0; io < r.Orb; ++io) {
     for (unsigned i2 = NGHOSTS, I2 = r.Ld[2] - NGHOSTS; i2 < I2; ++i2) {
-      local.set({NGHOSTS, NGHOSTS, i2, io});
-      unsigned pair_0 = local.index;
-      unsigned pair_1 = pair_0 + offset;
-      for (unsigned i1 = 0, I1 = r.ld[1]; i1 < I1; ++i1) {
-        pair_0 += r.Ld[0];
-        pair_1 += r.Ld[0];
-        for (std::size_t i0 = 0, I0 = r.ld[0]; i0 < I0; ++i0) {
-          const T tmp_1 = state_.coeff(pair_0) + gc * state_.coeff(pair_1);
-          const T tmp_2 = -gd * state_.coeff(pair_0) + state_.coeff(pair_1);
-          state_.coeffRef(pair_0) = norm * tmp_1;
-          state_.coeffRef(pair_1) = norm * tmp_2;
-          ++pair_0;
-          ++pair_1;
-        }
+      for (unsigned i1 = NGHOSTS, I1 = r.Ld[1] - NGHOSTS; i1 < I1; ++i1) {
+	local.set({NGHOSTS, i1, i2, io});
+	unsigned pair_0 = local.index;
+	unsigned pair_1 = pair_0 + r.offset;
+	for (unsigned i0 = 0, I0 = r.ld[0]; i0 < I0; ++i0) {
+	  const T tmp_1 = state_.coeff(pair_0) + gc * state_.coeff(pair_1);
+	  const T tmp_2 = -gd * state_.coeff(pair_0) + state_.coeff(pair_1);
+	  state_.coeffRef(pair_0) = norm * tmp_1;
+	  state_.coeffRef(pair_1) = norm * tmp_2;
+	  ++pair_0;
+	  ++pair_1;
+	}
       }
     }
   }
 #pragma omp barrier
 }
-};
+
+  template <int S, typename Derived> // S = -1: partition -> lattice, S = 1: lattice -> partition
+  void pairing_nn(const T gamma_, const unsigned hopping_, Derived&& state_)
+    requires Complex<T>
+  {
+    static_assert(S == -1 || S == 1);
+    
+    constexpr value_type norm = 1 / std::sqrt(2);
+    const T gd = static_cast<T>(S) * gamma_;
+    const T gc = std::conj(gd);
+    
+    auto& global_state = simul.Global.nn_pairing_state;
+    auto& global_result = simul.Global.nn_pairing_result;
+    Coordinates<std::size_t, 4> local(r.Ld);
+    Coordinates<std::size_t, 4> global(r.Lt);
+    
+    for (unsigned io = 0; io < r.Orb; ++io) {
+      for (unsigned i2 = NGHOSTS; i2 < r.Ld[2] - NGHOSTS; ++i2) {
+	for (unsigned i1 = NGHOSTS; i1 < r.Ld[1] - NGHOSTS; ++i1) {
+	  for (unsigned i0 = NGHOSTS; i0 < r.Ld[0] - NGHOSTS; ++i0) {
+	    local.set({i0, i1, i2, io});
+	    r.convertCoordinates(global, local);
+	    global_state[global.index] = state_.coeff(local.index);
+	    global_state[global.index + r.Sizet] = state_.coeff(local.index + r.offset);
+	  }
+	}
+      }
+    }
+    
+#pragma omp barrier
+    
+#pragma omp master
+    {
+      std::copy(global_state.begin(), global_state.end(), global_result.begin());
       
+      Coordinates<std::ptrdiff_t, 4> bond(r.lB3);
+      Coordinates<std::size_t, 4> site_i(r.Lt);
+      Coordinates<std::size_t, 4> site_j(r.Lt);
+      
+      for (unsigned io = 0; io < r.Orb; ++io) {
+	if (hopping_ >= h.hr.NHoppings(io)) {
+	  continue;
+	}
+	
+	bond.set_coord(h.hr.dist(hopping_, io));
+	
+	const std::ptrdiff_t dx = bond.coord[0] - 1;
+	const std::ptrdiff_t dy = bond.coord[1] - 1;
+	const std::ptrdiff_t dz = bond.coord[2] - 1;
+	const unsigned jo = static_cast<unsigned>(bond.coord[3]);
+	
+	for (unsigned i2 = 0; i2 < r.Lt[2]; ++i2) {
+	  for (unsigned i1 = 0; i1 < r.Lt[1]; ++i1) {
+	    for (unsigned i0 = 0; i0 < r.Lt[0]; ++i0) {
+	      
+	      std::ptrdiff_t j0 = static_cast<std::ptrdiff_t>(i0) + dx;
+	      std::ptrdiff_t j1 = static_cast<std::ptrdiff_t>(i1) + dy;
+	      std::ptrdiff_t j2 = static_cast<std::ptrdiff_t>(i2) + dz;
+	      
+	      // open-boundaries check
+	      if (r.Bd[0] == 0 && (j0 < 0 || j0 >= static_cast<std::ptrdiff_t>(r.Lt[0])))
+		continue;
+	      if (r.Bd[1] == 0 && (j1 < 0 || j1 >= static_cast<std::ptrdiff_t>(r.Lt[1])))
+		continue;
+	      if (r.Bd[2] == 0 && (j2 < 0 || j2 >= static_cast<std::ptrdiff_t>(r.Lt[2])))
+		continue;
+
+	      // periodic wrapping
+	      j0 = (j0 + static_cast<std::ptrdiff_t>(r.Lt[0]))
+		% static_cast<std::ptrdiff_t>(r.Lt[0]);
+	      j1 = (j1 + static_cast<std::ptrdiff_t>(r.Lt[1]))
+		% static_cast<std::ptrdiff_t>(r.Lt[1]);
+	      j2 = (j2 + static_cast<std::ptrdiff_t>(r.Lt[2]))
+		% static_cast<std::ptrdiff_t>(r.Lt[2]);
+	      
+	      site_i.set({i0, i1, i2, io});
+	      site_j.set({static_cast<std::size_t>(j0), static_cast<std::size_t>(j1),
+		  static_cast<std::size_t>(j2), jo});
+	      
+	      const std::size_t pair_0 = site_i.index;
+	      const std::size_t pair_1 = site_j.index + r.Sizet;
+	      const std::size_t partition_pair_1 = site_i.index + r.Sizet;
+	      
+	      std::size_t input_0;
+	      std::size_t input_1;
+	      std::size_t output_0;
+	      std::size_t output_1;
+
+	      if constexpr (S == -1)
+		{
+		  input_0 = pair_0;
+		  input_1 = partition_pair_1;
+		  output_0 = pair_0;
+		  output_1 = pair_1;
+		}
+	      else
+		{
+		  input_0 = pair_0;
+		  input_1 = pair_1;
+		  output_0 = pair_0;
+		  output_1 = partition_pair_1;
+		}
+	      
+	      const T tmp_1 = global_state[input_0] + gc * global_state[input_1];
+	      const T tmp_2 = -gd * global_state[input_0] + global_state[input_1];
+	      
+	      global_result[output_0] = norm * tmp_1;
+	      global_result[output_1] = norm * tmp_2;
+	    }
+	  }
+	}
+      }
+    }
+    
+#pragma omp barrier
+    
+    for (unsigned io = 0; io < r.Orb; ++io) {
+      for (unsigned i2 = NGHOSTS; i2 < r.Ld[2] - NGHOSTS; ++i2) {
+	for (unsigned i1 = NGHOSTS; i1 < r.Ld[1] - NGHOSTS; ++i1) {
+	  for (unsigned i0 = NGHOSTS; i0 < r.Ld[0] - NGHOSTS; ++i0) {
+	    local.set({i0, i1, i2, io});
+	    r.convertCoordinates(global, local);
+	    state_.coeffRef(local.index) = global_result[global.index];
+	    state_.coeffRef(local.index + r.offset) = global_result[global.index + r.Sizet];
+	  }
+	}
+      }
+    }
+    
+#pragma omp barrier
+  }
+  
+};
+

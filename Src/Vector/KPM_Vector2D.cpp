@@ -567,10 +567,14 @@ void KPM_Vector<T, 2>::mult_bdg_terms(const std::size_t istr)
 
   const std::size_t i0 = ((istr) % (r.lStr[0])) * TILE + NGHOSTS;
   const std::size_t i1 = ((istr) / r.lStr[0]) * TILE + NGHOSTS;
+  
   for (std::size_t io = 0; io < r.Orb; ++io) {
+    
     const std::size_t ip = io * x.basis[2];
     const std::size_t j0 = ip + i0 + i1 * std;
     const std::size_t j1 = j0 + TILE * std;
+
+    // on-site
     for (std::size_t j = j0; j < j1; j += std)
       for (std::size_t i = j; i < j + TILE; ++i) {
         const T ht = order * h.bdg.hartree(i);
@@ -578,6 +582,21 @@ void KPM_Vector<T, 2>::mult_bdg_terms(const std::size_t istr)
         const std::size_t o = i + offset;
         phi0[i] += phiM1[i] * ht + phiM1[o] * sd;
         phi0[o] += phiM1[i] * myconj(sd) - phiM1[o] * ht;
+      }
+
+    // nearest-neighbor
+    for (unsigned ib = 0; ib < h.hr.NHoppings(io); ++ib)
+      {
+	const std::ptrdiff_t d1 = h.hr.distance(ib, io);
+	
+	for (std::size_t j = j0; j < j1; j += std)
+	  for (std::size_t i = j; i < j + TILE; ++i)
+	    {
+	      const T nd = order * h.bdg.nn_delta(ib, i);
+	      const std::size_t o = i + offset;
+	      phi0[i] += nd * phiM1[o + d1];
+	      phi0[o] += myconj(nd) * phiM1[i + d1];
+	    }
       }
   }
 }
