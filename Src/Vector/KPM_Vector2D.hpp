@@ -140,35 +140,61 @@ public:
       Coordinates<std::ptrdiff_t, 3> bond(r.lB3);
       Coordinates<std::size_t, 3> site_i(r.Lt);
       Coordinates<std::size_t, 3> site_j(r.Lt);
+
+      const std::ptrdiff_t Lx = static_cast<std::ptrdiff_t>(r.Lt[0]);
+      const std::ptrdiff_t Ly = static_cast<std::ptrdiff_t>(r.Lt[1]);
       
       for (unsigned io = 0; io < r.Orb; ++io) {
-	if (hopping_ >= h.hr.NHoppings(io)) {
+
+	if (hopping_ >= h.hr.NHoppings(io))
 	  continue;
-	}
 	
 	bond.set_coord(h.hr.dist(hopping_, io));
 	
 	const std::ptrdiff_t dx = bond.coord[0] - 1;
 	const std::ptrdiff_t dy = bond.coord[1] - 1;
 	const unsigned jo = static_cast<unsigned>(bond.coord[2]);
+
+	unsigned i0_begin = 0;
+	unsigned i0_end = r.Lt[0];
+	unsigned i1_begin = 0;
+	unsigned i1_end = r.Lt[1];
 	
-	for (unsigned i1 = 0; i1 < r.Lt[1]; ++i1) {
-	  for (unsigned i0 = 0; i0 < r.Lt[0]; ++i0) {
+	if (r.Bd[0] == 0)
+	  {
+	    if (dx < 0)
+	      i0_begin = static_cast<unsigned>(-dx);
+	    else if (dx > 0)
+	      i0_end -= static_cast<unsigned>(dx);
+	  }
+	if (r.Bd[1] == 0)
+	  {
+	    if (dy < 0)
+	      i1_begin = static_cast<unsigned>(-dy);
+	    else if (dy > 0)
+	      i1_end -= static_cast<unsigned>(dy);
+	  }
+	
+	for (unsigned i1 = i1_begin; i1 < i1_end; ++i1) {
+	  for (unsigned i0 = i0_begin; i0 < i0_end; ++i0) {
 	    
 	    std::ptrdiff_t j0 = static_cast<std::ptrdiff_t>(i0) + dx;
 	    std::ptrdiff_t j1 = static_cast<std::ptrdiff_t>(i1) + dy;
 	    
-	    // open-boundaries check
-	    if (r.Bd[0] == 0 && (j0 < 0 || j0 >= static_cast<std::ptrdiff_t>(r.Lt[0])))
-	      continue;
-	    if (r.Bd[1] == 0 && (j1 < 0 || j1 >= static_cast<std::ptrdiff_t>(r.Lt[1])))
-	      continue;
-
-	    // periodic wrapping
-	    j0 = (j0 + static_cast<std::ptrdiff_t>(r.Lt[0]))
-	      % static_cast<std::ptrdiff_t>(r.Lt[0]);
-	    j1 = (j1 + static_cast<std::ptrdiff_t>(r.Lt[1]))
-	      % static_cast<std::ptrdiff_t>(r.Lt[1]);
+	    if (r.Bd[0] != 0)
+	      {
+		if (j0 < 0)
+		  j0 += Lx;
+		else if(j0 >= Lx)
+		  j0 -= Lx;
+	      }
+	    if (r.Bd[1] != 0)
+	      {
+		if (j1 < 0)
+		  j1 += Ly;
+		else if(j1 >= Ly)
+		  j1 -= Ly;
+	      }
 	    
 	    site_i.set({i0, i1, io});
 	    site_j.set({static_cast<std::size_t>(j0), static_cast<std::size_t>(j1), jo});
