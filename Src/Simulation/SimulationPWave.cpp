@@ -131,61 +131,46 @@ void Simulation<T, D>::p_wave(
   KPM_Vector<T, D> phi(2, *this);
   Eigen::Array<T, -1, 1> ket(2 * r.Sized);
   Eigen::Array<T, -1, 1> bra(2 * r.Sized);
+  Eigen::Array<value_type, -1, 1> density(2 * r.Sized);
 
   Eigen::Array<T, -1, 1> results_s_delta(r.Sized, 1);
   Eigen::Array<T, -1, -1> results_nn_delta(h.bdg.nn_delta.rows(), r.Sized);
+  Eigen::Array<T, -1, -1> raw_nn_delta(h.bdg.nn_delta.rows(), r.Sized);
 
-  // Number of possible spatial displacement codes: 3^D
+  Eigen::Array<int, -1, -1> reverse_hopping(h.bdg.nn_delta.rows(), r.Orb);
+  reverse_hopping.setConstant(-1);
+  
   unsigned cell_basis = 1;
   for (unsigned d = 0; d < D; ++d)
     cell_basis *= 3;
   
-  // reverse_hopping(ib, io) gives the hopping index jb such that:
-  //
-  //   (io, ib):       i -> j
-  //   (final_io, jb): j -> i
-  //
-  // Use int so that -1 can mean "not found".
-  Eigen::Array<int, -1, -1> reverse_hopping(h.bdg.nn_delta.rows(), r.Orb);
-  reverse_hopping.setConstant(-1);
-  
   for (unsigned io = 0; io < r.Orb; ++io)
-    {
-      for (unsigned ib = 0; ib < h.hr.NHoppings(io); ++ib)
-	{
-	  const unsigned d = h.hr.dist(ib, io);
-	  // Orbital reached by the original hopping
-	  const unsigned final_io = d / cell_basis;
-	  // Spatial part of the hopping
-	  const unsigned spatial_d = d % cell_basis;
-	  // Reverse spatial displacement
-	  const unsigned reverse_spatial_d = cell_basis - 1 - spatial_d;
-	  // Reverse hopping:
-	  // starts at final_io and ends at original io
-	  const unsigned reverse_d = io * cell_basis + reverse_spatial_d;
-	  
-	  // Find which hopping of final_io has this displacement
-	  for (unsigned jb = 0; jb < h.bdg.nn_delta.rows() && jb < h.hr.NHoppings(final_io); ++jb)
+    for (unsigned ib = 0; ib < h.bdg.nn_delta.rows() && ib < h.hr.NHoppings(io); ++ib)
+      {
+	const unsigned d = h.hr.dist(ib, io);
+	const unsigned final_io = d / cell_basis;
+	const unsigned spatial_d = d % cell_basis;
+	const unsigned reverse_spatial_d = cell_basis - 1 - spatial_d;
+	const unsigned reverse_d = io * cell_basis + reverse_spatial_d;
+	
+	for (unsigned jb = 0; jb < h.bdg.nn_delta.rows() && jb < h.hr.NHoppings(final_io); ++jb)
+	  if (h.hr.dist(jb, final_io) == reverse_d)
 	    {
-	      if (h.hr.dist(jb, final_io) == reverse_d)
-		{
-		  reverse_hopping(ib, io) = static_cast<int>(jb);
-		  break;
-		}
+	      reverse_hopping(ib, io) = static_cast<int>(jb);
+	      break;
 	    }
-	  
-	  if (reverse_hopping(ib, io) < 0)
-	    {
-	      std::cerr
-                << "Could not find reverse hopping for "
-                << "orbital " << io
-                << ", hopping " << ib
-                << std::endl;
-	      exit(1);
-	    }
-	}
-    }
 
+	if (reverse_hopping(ib, io) < 0)
+	  {
+	    std::cerr
+	      << "Could not find reverse hopping for "
+	      << "orbital " << io
+	      << ", hopping " << ib
+	      << std::endl;
+	    exit(1);
+	  }
+      }
+  
   while (iteration <= max_iteration)
     {
       results_s_delta.setZero();
@@ -216,11 +201,10 @@ void Simulation<T, D>::p_wave(
 	    }
 	  
 	  phi.template pairing<1>(T(1.0), ket);
-	  
+
+	  density = (bra.conjugate() * ket).abs2();
 	  const Eigen::Array<value_type, -1, 1> upsilon_1 =
-	    (bra.conjugate() * ket).abs2().head(r.Sized)
-	    -
-	    (bra.conjugate() * ket).abs2().tail(r.Sized);
+	    density.head(r.Sized) - density.tail(r.Sized);
 	  
 	  phi.v.setZero();
 	  phi.set_index(0);
@@ -239,11 +223,10 @@ void Simulation<T, D>::p_wave(
 	    }
 	  
 	  phi.template pairing<1>(T(0.0, 1.0), ket);
-	  
+
+	  density = (bra.conjugate() * ket).abs2();
 	  const Eigen::Array<value_type, -1, 1> upsilon_i =
-	    (bra.conjugate() * ket).abs2().head(r.Sized)
-	    -
-	    (bra.conjugate() * ket).abs2().tail(r.Sized);
+	    density.head(r.Sized) - density.tail(r.Sized);
 	  
 	  Eigen::Array<T, -1, 1> map_s_delta(r.Sized);
 	  map_s_delta.real() = value_type(0.5) * u * upsilon_1;
@@ -273,11 +256,10 @@ void Simulation<T, D>::p_wave(
 		}
 	      
 	      phi.template pairing_nn<1>(T(1.0), hop, ket);
-	      
+
+	      density = (bra.conjugate() * ket).abs2();
 	      const Eigen::Array<value_type, -1, 1> upsilon_1 =
-		(bra.conjugate() * ket).abs2().head(r.Sized)
-		-
-		(bra.conjugate() * ket).abs2().tail(r.Sized);
+		density.head(r.Sized) - density.tail(r.Sized);
 	      
 	      phi.v.setZero();
 	      phi.set_index(0);
@@ -296,11 +278,10 @@ void Simulation<T, D>::p_wave(
 		}
 	      
 	      phi.template pairing_nn<1>(T(0.0, 1.0), hop, ket);
-	      
+
+	      density = (bra.conjugate() * ket).abs2();
 	      const Eigen::Array<value_type, -1, 1> upsilon_i =
-		(bra.conjugate() * ket).abs2().head(r.Sized)
-		-
-		(bra.conjugate() * ket).abs2().tail(r.Sized);
+		density.head(r.Sized) - density.tail(r.Sized);
 	      
 	      Eigen::Array<T, -1, 1> map_nn_delta(r.Sized);
 	      map_nn_delta.real() = value_type(0.5) * v * upsilon_1;
@@ -311,7 +292,7 @@ void Simulation<T, D>::p_wave(
 	} // end of cycle for random vectors
 
       // exchanging boundaries
-      Eigen::Array<T, -1, -1> raw_nn_delta = results_nn_delta;
+      raw_nn_delta = results_nn_delta;
       for (unsigned ib = 0; ib < h.bdg.nn_delta.rows(); ++ib)
 	{
 	  phi.v.setZero();
@@ -323,30 +304,40 @@ void Simulation<T, D>::p_wave(
       
       Coordinates<std::size_t, D + 1> local(r.Ld);
       for (unsigned io = 0; io < r.Orb; ++io)
-	{
-	  for (unsigned ib = 0; ib < h.bdg.nn_delta.rows() && ib < h.hr.NHoppings(io); ++ib)
-	    {
-	      const unsigned jb = static_cast<unsigned>(reverse_hopping(ib, io));
-	      const std::ptrdiff_t d1 = h.hr.distance(ib, io);
-	      
-	      if constexpr (D == 2)
+	for (unsigned ib = 0; ib < h.bdg.nn_delta.rows() && ib < h.hr.NHoppings(io); ++ib)
+	  {
+	    const unsigned jb = static_cast<unsigned>(reverse_hopping(ib, io));
+	    const std::ptrdiff_t d1 = h.hr.distance(ib, io);
+	    
+	    if constexpr (D == 2)
+	      for (unsigned i1 = NGHOSTS; i1 < r.Ld[1] - NGHOSTS; ++i1)
 		{
-		  for (unsigned i1 = NGHOSTS; i1 < r.Ld[1] - NGHOSTS; ++i1)
+		  local.set({NGHOSTS, i1, io});
+		  const std::size_t j0 = local.index;
+		  const std::size_t j1 = j0 + r.ld[0];
+		  
+		  for (std::size_t i = j0; i < j1; ++i)
 		    {
-		      local.set({NGHOSTS, i1, io});
-		      const std::size_t j0 = local.index;
-		      const std::size_t j1 = j0 + r.ld[0];
-		      
-		      for (std::size_t i = j0; i < j1; ++i)
-			{
-			  const std::size_t j = static_cast<std::size_t>(static_cast<std::ptrdiff_t>(i) + d1);
-			  results_nn_delta(ib, i) = value_type(0.5) * (raw_nn_delta(ib, i) + raw_nn_delta(jb, j));
-			}
+		      const std::size_t j = static_cast<std::size_t>(static_cast<std::ptrdiff_t>(i) + d1);
+		      results_nn_delta(ib, i) = value_type(0.5) * (raw_nn_delta(ib, i) + raw_nn_delta(jb, j));
 		    }
-		} // end of if
-	    } // end of cycle for hoppings
-	} // end of cycle for orbitals
-      
+		}
+
+	    if constexpr (D == 3)
+	      for (unsigned i2 = NGHOSTS; i2 < r.Ld[2] - NGHOSTS; ++i2)
+		for (unsigned i1 = NGHOSTS; i1 < r.Ld[1] - NGHOSTS; ++i1)
+		  {
+		    local.set({NGHOSTS, i1, i2, io});
+		    const std::size_t j0 = local.index;
+		    const std::size_t j1 = j0 + r.ld[0];
+		    
+		    for (std::size_t i = j0; i < j1; ++i)
+		      {
+			const std::size_t j = static_cast<std::size_t>(static_cast<std::ptrdiff_t>(i) + d1);
+			results_nn_delta(ib, i) = value_type(0.5) * (raw_nn_delta(ib, i) + raw_nn_delta(jb, j));
+		      }
+		  }
+	  }
       
       weight_avg *= 1.0 + weight_r / std::pow(value_type(iteration), weight_alpha);
       weight_sum += weight_avg;
