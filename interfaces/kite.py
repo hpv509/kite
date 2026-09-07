@@ -476,6 +476,11 @@ class Calculation:
         return self._s_wave
 
     @property
+    def get_s_wave_c(self):
+        """Returns the requested s-wave calculation enforcing translation symmetry."""
+        return self._s_wave_c
+
+    @property
     def get_p_wave(self):
         """Returns the requested p-wave calculation."""
         return self._p_wave
@@ -581,6 +586,7 @@ class Calculation:
         self._scaling_factor = configuration.energy_scale
         self._energy_shift = configuration.energy_shift
         self._s_wave                         = []
+        self._s_wave_c                       = []
         self._p_wave                         = []
         self._dos                            = []
         self._ldos                           = []
@@ -610,7 +616,19 @@ class Calculation:
                                 'zzx': 24, 'zzy': 25, 'zzz': 26}
         self._avail_dir_sngl = {'xx': 0, 'yy': 1, 'zz': 2}
 
-    def s_wave(self, num_random, beta, chemical_potential, u, gamma, delta):
+    def s_wave(
+        self,
+        num_random,
+        beta,
+        chemical_potential,
+        u,
+        gamma,
+        delta,
+        num_iterations,
+        prev_iterations=0,
+        weight_r=1.0,
+        weight_alpha=1.0,
+    ):
         """Self-consistent onsite s-wave BdG calculation.
 
         Parameters
@@ -627,16 +645,88 @@ class Calculation:
             Hartree density.
         delta : float
             Pairing term.
+        num_iterations : int
+            Number of self-consistency iterations to run.
+        prev_iterations : int
+            Iterations already completed in a previous run. Restores the
+            Robbins-Monro weight state so a restart continues the same
+            averaging sequence rather than restarting it.
+        weight_r : float
+            Weight amplitude.
+        weight_alpha : float
+            Convergence of the averaging
+            requires 0.5 < weight_alpha <= 1.
         """
+        self._s_wave.append(
+            {
+                "num_random": num_random,
+                "num_iterations": num_iterations,
+                "prev_iterations": prev_iterations,
+                "beta": beta,
+                "chemical_potential": chemical_potential,
+                "u": u,
+                "gamma": gamma,
+                "delta": delta,
+                "weight_r": weight_r,
+                "weight_alpha": weight_alpha,
+            }
+        )
 
-        self._s_wave.append({
-            'num_random': num_random,
-            'beta': beta,
-            'chemical_potential': chemical_potential,
-            'u': u,
-            'gamma': gamma,
-            'delta': delta
-        })
+    def s_wave_clean(
+        self,
+        num_random,
+        beta,
+        chemical_potential,
+        u,
+        gamma,
+        delta,
+        num_iterations,
+        prev_iterations=0,
+        weight_r=1.0,
+        weight_alpha=1.0,
+    ):
+        """Self-consistent onsite s-wave BdG calculation.
+
+        Parameters
+        ----------
+        num_random : int
+            Number of random vectors.
+        beta : float
+            Inverse of temperature.
+        chemical_potential : float
+            Chemical potential.
+        u : float
+            Onsite interactions strength.
+        gamma : float
+            Hartree density.
+        delta : float
+            Pairing term.
+        num_iterations : int
+            Number of self-consistency iterations to run.
+        prev_iterations : int
+            Iterations already completed in a previous run. Restores the
+            Robbins-Monro weight state so a restart continues the same
+            averaging sequence rather than restarting it.
+        weight_r : float
+            Weight amplitude.
+        weight_alpha : float
+            Convergence of the averaging
+            requires 0.5 < weight_alpha <= 1.
+        """
+        self._s_wave_c.append(
+            {
+                "num_random": num_random,
+                "num_iterations": num_iterations,
+                "prev_iterations": prev_iterations,
+                "beta": beta,
+                "chemical_potential": chemical_potential,
+                "u": u,
+                "gamma": gamma,
+                "delta": delta,
+                "weight_r": weight_r,
+                "weight_alpha": weight_alpha,
+            }
+        )
 
     def p_wave(self, num_random, beta, chemical_potential, u, v, gamma, s_delta, nn_delta):
         """Self-consistent nearest-neighbour BdG calculation.
@@ -1148,31 +1238,6 @@ class Configuration:
     def __init__(self, divisions=(1, 1, 1), length=(1, 1, 1), boundaries=('open', 'open', 'open'),
                  is_complex=False, precision=1, spectrum_range=None, seed_h=0, seed_v=0, angles=(0, 0, 0), custom_local=False,
                  custom_local_print=False, custom_potential=0):
-        """Define basic parameters used in the calculation
-
-       Parameters
-       ----------
-       divisions : int, tuple(int, int), tuple(int, int, int)
-           Number of decomposition parts of the system.
-       length : int, tuple(int, int), tuple(int, int, int)
-           Number of unit cells in each direction.
-       boundaries : str, tuple(str, str), tuple(str, str, srt)
-           Periodic boundary conditions each direction:
-               "periodic"
-               "open"
-               "twisted" -- this option needs the extra argument angles=[phi_1,..,phi_DIM] where phi_i \in [0, 2*M_PI]
-               "random"
-       is_complex : bool
-           Boolean that reflects whether the type of Hamiltonian is complex or not.
-       precision : int
-            Integer which defines the precision of the number used in the calculation. Float - 0, double - 1,
-            long double - 2.
-       spectrum_range : Optional[tuple(float, float)]
-            Energy scale which defines the scaling factor of all the energy related parameters. The scaling is done
-            automatically in the background after this definition. If the term is not specified, a rough estimate of the
-            bounds is found.
-        custom_potential: Flag to use local potential
-       """
 
         if spectrum_range:
             self._energy_scale = (spectrum_range[1] - spectrum_range[0]) / 2
@@ -1369,7 +1434,7 @@ def config_system(lattice, config, calculation, modification=None, **kwargs):
         config._is_complex = 1
         config.set_type()
 
-    if (calculation.get_s_wave or calculation.get_p_wave) and complx == 0:
+    if (calculation.get_s_wave or calculation.get_s_wave_c or calculation.get_p_wave) and complx == 0:
         print('A superconducting BdG calculation was requested, but is_complex is 0. Automatically turning is_complex to 1!')
         config._is_complex = 1
         config.set_type()
@@ -1822,11 +1887,33 @@ def config_system(lattice, config, calculation, modification=None, **kwargs):
 
         grpc_p = grpc.create_group('s_wave')
         grpc_p.create_dataset('NumRandoms', data=single_s_wave['num_random'], dtype=np.int32)
+        grpc_p.create_dataset('NumIterations', data=single_s_wave['num_iterations'], dtype=np.int32)
+        grpc_p.create_dataset('PrevIterations', data=single_s_wave['prev_iterations'], dtype=np.int32)
         grpc_p.create_dataset('Beta', data=single_s_wave['beta'], dtype=np.float64)
         grpc_p.create_dataset('ChemicalPotential', data=single_s_wave['chemical_potential'], dtype=np.float64)
         grpc_p.create_dataset('U', data=single_s_wave['u'], dtype=np.float64)
-        grpc_p.create_dataset('Gamma', data=single_s_wave['gamma'], dtype=np.float64)
-        grpc_p.create_dataset('Delta', data=single_s_wave['delta'], dtype=np.float64)
+        grpc_p.create_dataset('Gamma', data=np.asarray(single_s_wave['gamma']), dtype=np.float64)
+        grpc_p.create_dataset('Delta', data=np.asarray(single_s_wave['delta']), dtype=np.float64)
+        grpc_p.create_dataset('Wr', data=single_s_wave['weight_r'], dtype=np.float64)
+        grpc_p.create_dataset('Walpha', data=single_s_wave['weight_alpha'], dtype=np.float64)
+
+    if calculation.get_s_wave_c:
+        if len(calculation.get_s_wave) > 1:
+            raise SystemExit('Only a single s-wave calculation is currently allowed.')
+
+        single_s_wave = calculation.get_s_wave_c[0]
+
+        grpc_p = grpc.create_group('s_wave_c')
+        grpc_p.create_dataset('NumRandoms', data=single_s_wave['num_random'], dtype=np.int32)
+        grpc_p.create_dataset('NumIterations', data=single_s_wave['num_iterations'], dtype=np.int32)
+        grpc_p.create_dataset('PrevIterations', data=single_s_wave['prev_iterations'], dtype=np.int32)
+        grpc_p.create_dataset('Beta', data=single_s_wave['beta'], dtype=np.float64)
+        grpc_p.create_dataset('ChemicalPotential', data=single_s_wave['chemical_potential'], dtype=np.float64)
+        grpc_p.create_dataset('U', data=single_s_wave['u'], dtype=np.float64)
+        grpc_p.create_dataset('Gamma', data=np.asarray(single_s_wave['gamma']), dtype=np.float64)
+        grpc_p.create_dataset('Delta', data=np.asarray(single_s_wave['delta']), dtype=np.float64)
+        grpc_p.create_dataset('Wr', data=single_s_wave['weight_r'], dtype=np.float64)
+        grpc_p.create_dataset('Walpha', data=single_s_wave['weight_alpha'], dtype=np.float64)
 
     if calculation.get_p_wave:
         if len(calculation.get_p_wave) > 1:
