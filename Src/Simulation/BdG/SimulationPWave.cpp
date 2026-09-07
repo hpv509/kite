@@ -110,11 +110,11 @@ void Simulation<T, D>::p_wave(
   const Eigen::Array<value_type, -1, 1> coefs =
     Coefficients::build_fermi_sqrt<value_type>(beta, value_type(0.0));
 
-  h.bdg.init_fields(s_delta, nn_delta, gamma, mu);
-  
+  h.bdg.init_fields(s_delta, nn_delta, gamma);
+
   int iteration = 1;
   const int max_iteration = 1024;
-  
+
   Eigen::Array<T, -1, 1> sum_s_delta(r.Sized, 1);
   Eigen::Array<T, -1, -1> sum_nn_delta(h.bdg.nn_delta.rows(), r.Sized);
   sum_s_delta.setZero();

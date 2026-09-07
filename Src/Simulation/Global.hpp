@@ -33,6 +33,10 @@ struct GLOBAL_VARIABLES {
   Eigen::Array<T, -1, -1> ldos_map;
   Eigen::Array<T, -1, -1> s_wave_map;
   Eigen::Array<T, -1, -1> p_wave_map;
+  Eigen::Array<T, -1, -1> free_energy;
+  Eigen::Array<T, -1,  1> orb_sum;
+  Eigen::Array<T, -1, -1> s_delta_hist;
+
   Eigen::Array<T, -1, -1> localized_wavepacket;
   Eigen::Array<T, -1, -1> results_1;
   Eigen::Array<T, -1, -1> results_2;

@@ -296,10 +296,10 @@ void Simulation<T, D>::custom_one(
 //   vectors.push_back(&kpm_aux_0);
 //   vectors.push_back(&kpm_aux_1);
 //   vectors.push_back(&kpm_trc_1);
+//   h.generate_disorder();
+//   h.generate_twists();
 //   for (unsigned i = 0, I = vectors.size(); i < I; ++i)
 //     vectors.at(i) -> initiate_phases();
-//   h.generate_twists();
-//   h.generate_disorder();
 //   for (std::size_t pos = 0, Pos = r.Sizet; pos < Pos; ++pos) {
 //     kpm_trc_0.build_site(pos);
 //     kpm_trc_0.Exchange_Boundaries();

@@ -88,7 +88,7 @@ Eigen::Array<std::complex<T>, -1, 1> build_cplx_exp(const T t)
 template <typename T>
 Eigen::Array<T, -1, 1> build_fermi(const T beta_, const T mu_)
 {
-  const unsigned N = std::ceil(3.0 * beta_);
+  const unsigned N = std::ceil(4.0 * beta_);
   Eigen::Array<T, -1, 1> x(N);
   Eigen::Array<T, -1, 1> f(N);
   Eigen::Array<T, -1, 1> ac(N);
@@ -134,13 +134,11 @@ Eigen::Array<T, -1, 1> build_fermi_sqrt(const T beta_, const T mu_)
     else
       f(i) = 1.0 / std::sqrt(1.0 + std::exp(argument));
   }
-
   for (unsigned m = 0; m < Np; ++m) {
     T sum = 0.0;
     for (unsigned i = 0; i < itg_points; ++i)
       sum += std::cos(m * cheb_arcos(i)) * f(i);
-
-    coef(m) = 2.0 * sum * jackson<T>(m, Np) / itg_points;
+    coef(m) = 2.0 * sum / itg_points;
   }
   coef(0) *= 0.5;
   return coef;
@@ -169,6 +167,26 @@ Eigen::Array<std::complex<T>, -1, 1> build_dgreen(const std::complex<T> z_)
   return coef;
 }
 
+template <typename T>
+Eigen::Array<T, -1, 1> build_free_energy(const T beta_, const T mu_)
+{
+  const unsigned Np = std::ceil(2.0 * beta_);
+  const unsigned Nq = 4 * Np;
+  Eigen::Array<T, -1, 1> coefs(Np);
+  coefs.setZero();
+  for (unsigned k = 0; k < Nq; ++k) {
+    const T theta = M_PI * (k + 0.5) / Nq;
+    const T y = 0.5 * beta_ * (std::cos(theta) - mu_);
+    const T ay = std::abs(y);
+    const T g = -(ay + std::log1p(std::exp(-2.0 * ay)));
+    for (unsigned n = 0; n < Np; ++n)
+      coefs(n) += g * std::cos(n * theta) / beta_;
+  }
+  coefs *= 2.0 / Nq;
+  coefs(0) *= 0.5;
+  return coefs;
+}
+
 #define INSTANTIATE_COEFFICIENTS(type)                                         \
   template type jackson<type>(const int, const int);                           \
   template type gauss_first<type>(const int, const type, const type);          \
@@ -186,7 +204,9 @@ Eigen::Array<std::complex<T>, -1, 1> build_dgreen(const std::complex<T> z_)
   build_fermi_sqrt<type>(const type, const type);                              \
   template Eigen::Array<std::complex<type>, -1, 1> build_dgreen<type>(         \
     const std::complex<type>                                                   \
-  );
+  );                                                                           \
+  template Eigen::Array<type, -1, 1>                                           \
+  build_free_energy<type>(const type, const type);
 
 INSTANTIATE_COEFFICIENTS(float)
 INSTANTIATE_COEFFICIENTS(double)

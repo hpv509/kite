@@ -504,8 +504,9 @@ void inline KPM_Vector<T, 2>::mult_regular_hoppings(
     count = 0;
     y = 0;
     for (std::size_t j = j0; j < j1; j += std) {
-      const T t1 =
-        mult_t1_ghost_cor[io][ib][count++] * Fact_Bnd[1][hop[1]][rr[1] + y];
+      const T t_bare = mult_t1_ghost_cor[io][ib][count++];
+      const T phase_y = Fact_Bnd[1][hop[1]][rr[1] + y];
+      const T t1 = t_bare * phase_y;
       x = 0;
       for (std::size_t i = j; i < j + TILE; i++) {
         const T f1 = Fact_Bnd[0][hop[0]][rr[0] + x];
@@ -513,10 +514,10 @@ void inline KPM_Vector<T, 2>::mult_regular_hoppings(
         ++x;
       }
       if constexpr (is_bdg) {
-        const T t2 = myconj(t1);
+        const T t2 = myconj(t_bare) * phase_y;
         x = 0;
         for (std::size_t i = j; i < j + TILE; i++) {
-          const T f1 = myconj(Fact_Bnd[0][hop[0]][rr[0] + x]);
+          const T f1 = Fact_Bnd[0][hop[0]][rr[0] + x];
           phi0[i + offset] -= t2 * f1 * phiM1[i + d1 + offset];
           ++x;
         }
@@ -561,44 +562,32 @@ void KPM_Vector<T, 2>::mult_position(
 
 template <typename T>
 template <unsigned MULT>
-void KPM_Vector<T, 2>::mult_bdg_terms(const std::size_t istr)
+void KPM_Vector<T, 2>::mult_bdg_terms(const std::size_t j0_)
 {
   constexpr value_type order = MULT + 1;
+  const std::size_t j1 = j0_ + TILE * std;
+  // on-site
+  for (std::size_t j = j0_; j < j1; j += std)
+    for (std::size_t i = j; i < j + TILE; ++i) {
+      const T ht = order * h.bdg.onsite(i);
+      const T sd = order * h.bdg.s_delta(i);
+      const std::size_t o = i + offset;
+      phi0[i] += phiM1[i] * ht + phiM1[o] * sd;
+      phi0[o] += phiM1[i] * myconj(sd) - phiM1[o] * ht;
+    }
+  // nearest-neighbor
+  // for (unsigned ib = 0; ib < h.hr.NHoppings(io); ++ib) {
+  //   const std::ptrdiff_t d1 = h.hr.distance(ib, io);
 
-  const std::size_t i0 = ((istr) % (r.lStr[0])) * TILE + NGHOSTS;
-  const std::size_t i1 = ((istr) / r.lStr[0]) * TILE + NGHOSTS;
-  
-  for (std::size_t io = 0; io < r.Orb; ++io) {
-    
-    const std::size_t ip = io * x.basis[2];
-    const std::size_t j0 = ip + i0 + i1 * std;
-    const std::size_t j1 = j0 + TILE * std;
-
-    // on-site
-    for (std::size_t j = j0; j < j1; j += std)
-      for (std::size_t i = j; i < j + TILE; ++i) {
-        const T ht = order * h.bdg.hartree(i);
-        const T sd = order * h.bdg.s_delta(i);
-        const std::size_t o = i + offset;
-        phi0[i] += phiM1[i] * ht + phiM1[o] * sd;
-        phi0[o] += phiM1[i] * myconj(sd) - phiM1[o] * ht;
-      }
-
-    // nearest-neighbor
-    for (unsigned ib = 0; ib < h.hr.NHoppings(io); ++ib)
-      {
-	const std::ptrdiff_t d1 = h.hr.distance(ib, io);
-	
-	for (std::size_t j = j0; j < j1; j += std)
-	  for (std::size_t i = j; i < j + TILE; ++i)
-	    {
-	      const T nd = order * h.bdg.nn_delta(ib, i);
-	      const std::size_t o = i + offset;
-	      phi0[i] += nd * phiM1[o + d1];
-	      phi0[o] += myconj(nd) * phiM1[i + d1];
-	    }
-      }
-  }
+  //   for (std::size_t j = j0; j < j1; j += std)
+  //     for (std::size_t i = j; i < j + TILE; ++i) {
+  //       const T nd = order * h.bdg.nn_delta(ib, i);
+  //       const std::size_t o = i + offset;
+  //       phi0[i] += nd * phiM1[o + d1];
+  //       phi0[o] += myconj(nd) * phiM1[i + d1];
+  //     }
+  // }
+  // }
 }
 
 template <typename T>
@@ -635,9 +624,9 @@ void KPM_Vector<T, 2>::KPM_MOTOR(KPM_Vector<T, 2> *kpm_final, unsigned axis)
 
         // Hoppings
         mult_regular_hoppings(j0, io);
+        if constexpr (is_bdg)
+          mult_bdg_terms<MULT>(j0);
       }
-      if constexpr (is_bdg)
-        mult_bdg_terms<MULT>(istr);
       KPM_VectorBasis<T, 2u>::template multiply_defect<
         MULT, VELOCITY>(istr, phi0, phiM1, axis);
 
