@@ -16,7 +16,6 @@ class KPM_Vector;
 #include "KPM_Vector.hpp"
 #include "Loop.hpp"
 #include "Coefficients.hpp"
-#include <iostream>
 
 template <typename T, unsigned D>
 void Simulation<T, D>::calc_swave_clean()
