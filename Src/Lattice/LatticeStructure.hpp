@@ -42,7 +42,6 @@ public:
   Eigen::Matrix<double, D, D> ghost_pot; // ghosts_correlation potential
 
   // BdG Extension
-  static inline constexpr unsigned is_bdg{INTERACTION};
   std::size_t Io;
   std::size_t offset;
 

@@ -482,6 +482,7 @@ void inline KPM_Vector<T, 2>::mult_local_disorder(
 }
 
 template <typename T>
+template <unsigned MULT>
 void inline KPM_Vector<T, 2>::mult_regular_hoppings(
   const std::size_t &j0,
   const std::size_t &io
@@ -489,12 +490,12 @@ void inline KPM_Vector<T, 2>::mult_regular_hoppings(
 {
   std::size_t count;
   const std::size_t j1 = j0 + TILE * std;
-  std::size_t rr[2], hop[2], x, y; // Variables for TBC
+  std::size_t hop[2], x, y; // Variables for TBC
+  const std::size_t rr[2] =
+    {j0 % r.Ld[0], (j0 % (r.Ld[0] * r.Ld[1])) / r.Ld[0]};
+
   // Hoppings
   for (unsigned ib = 0; ib < h.hr.NHoppings(io); ib++) {
-    rr[0] = (j0 % r.Ld[0]);
-    rr[1] = (j0 % (r.Ld[0] * r.Ld[1])) / (r.Ld[0]);
-
     const std::ptrdiff_t d1 = h.hr.distance(ib, io);
     // Determine the Supercell Jumps
     const std::size_t i_f = j0 + d1;
@@ -562,32 +563,59 @@ void KPM_Vector<T, 2>::mult_position(
 
 template <typename T>
 template <unsigned MULT>
-void KPM_Vector<T, 2>::mult_bdg_terms(const std::size_t j0_)
+void KPM_Vector<T, 2>::mult_diag_bdg_terms(const std::size_t j0_)
 {
   constexpr value_type order = MULT + 1;
   const std::size_t j1 = j0_ + TILE * std;
-  // on-site
   for (std::size_t j = j0_; j < j1; j += std)
     for (std::size_t i = j; i < j + TILE; ++i) {
-      const T ht = order * h.bdg.onsite(i);
-      const T sd = order * h.bdg.s_delta(i);
       const std::size_t o = i + offset;
-      phi0[i] += phiM1[i] * ht + phiM1[o] * sd;
-      phi0[o] += phiM1[i] * myconj(sd) - phiM1[o] * ht;
+      const T ht = order * h.bdg.onsite(i);
+      phi0[i] += phiM1[i] * ht;
+      phi0[o] -= phiM1[o] * ht;
+      if constexpr (pairing::is_s_wave) {
+        const T sd = order * h.bdg.s_delta(i);
+        phi0[i] += phiM1[o] * sd;
+        phi0[o] += phiM1[i] * myconj(sd);
+      }
     }
-  // nearest-neighbor
-  // for (unsigned ib = 0; ib < h.hr.NHoppings(io); ++ib) {
-  //   const std::ptrdiff_t d1 = h.hr.distance(ib, io);
+}
 
-  //   for (std::size_t j = j0; j < j1; j += std)
-  //     for (std::size_t i = j; i < j + TILE; ++i) {
-  //       const T nd = order * h.bdg.nn_delta(ib, i);
-  //       const std::size_t o = i + offset;
-  //       phi0[i] += nd * phiM1[o + d1];
-  //       phi0[o] += myconj(nd) * phiM1[i + d1];
-  //     }
-  // }
-  // }
+template <typename T>
+template <unsigned MULT>
+void inline KPM_Vector<T, 2>::mult_pairing_bonds(
+  const std::size_t j0,
+  const std::size_t io
+)
+  requires Complex<T>
+{
+  constexpr value_type order = MULT + 1;
+  const std::size_t j1 = j0 + TILE * std;
+  std::size_t hop[2], x, y;
+
+  const std::size_t rr[2] =
+    {j0 % r.Ld[0], (j0 % (r.Ld[0] * r.Ld[1])) / r.Ld[0]};
+
+  for (unsigned b = 0, B = h.pr.NPairings(io); b < B; ++b) {
+    const std::ptrdiff_t d1 = h.pr.dist_tile(b, io);
+    const std::size_t i_f = j0 + d1;
+    hop[0] = (i_f % r.Ld[0]) - rr[0] + 1;
+    hop[1] = (i_f % (r.Ld[0] * r.Ld[1])) / (r.Ld[0]) - rr[1] + 1;
+
+    y = 0;
+    for (std::size_t j = j0; j < j1; j += std) {
+      const T phase_y = Fact_Bnd[1][hop[1]][rr[1] + y];
+      x = 0;
+      for (std::size_t i = j; i < j + TILE; i++) {
+        const T f1 = Fact_Bnd[0][hop[0]][rr[0] + x];
+        const T nd = order * h.bdg.nn_delta(b, i) * phase_y * f1;
+        phi0[i] += nd * phiM1[i + d1 + offset];
+        phi0[i + offset] += myconj(nd) * phiM1[i + d1];
+        ++x;
+      }
+      ++y;
+    }
+  }
 }
 
 template <typename T>
@@ -623,9 +651,12 @@ void KPM_Vector<T, 2>::KPM_MOTOR(KPM_Vector<T, 2> *kpm_final, unsigned axis)
           mult_local_disorder<MULT>(j0, io);
 
         // Hoppings
-        mult_regular_hoppings(j0, io);
-        if constexpr (is_bdg)
-          mult_bdg_terms<MULT>(j0);
+        mult_regular_hoppings<MULT>(j0, io);
+
+        if constexpr (pairing::is_bdg)
+          mult_diag_bdg_terms<MULT>(j0);
+        if constexpr (pairing::is_p_wave)
+          mult_pairing_bonds<MULT>(j0, io);
       }
       KPM_VectorBasis<T, 2u>::template multiply_defect<
         MULT, VELOCITY>(istr, phi0, phiM1, axis);

@@ -15,6 +15,7 @@ class Hamiltonian;
 #include "HamiltonianVacancies.hpp"
 #include "HamiltonianDefects.hpp"
 #include "HamiltonianBdG.hpp"
+#include "Pairing.hpp"
 
 template <typename T, unsigned D>
 class Hamiltonian {
@@ -50,6 +51,7 @@ public:
     BoundTwist; // Vector Containing Boundary Twist Angles
 
   HamiltonianBdG<T, D> bdg;
+  PairingStructure<T, D> pr;
 
   // Custom Potential
   unsigned check_local_potential;

@@ -31,7 +31,8 @@ Hamiltonian<T, D>::Hamiltonian(
   hr(name, r),
   cross_mozaic(r.NStr),
   hV(name, rr, rnd),
-  bdg(r.Sized, static_cast<std::size_t>(hr.NHoppings.maxCoeff()))
+  bdg(name, r),
+  pr(name, r)
 {
 #pragma omp critical
   {
@@ -43,6 +44,8 @@ Hamiltonian<T, D>::Hamiltonian(
   build_Anderson_disorder();
   build_vacancies_disorder();
   build_structural_disorder();
+  if constexpr (pairing::is_bdg)
+    pr.allocate(bdg.nn_delta);
 }
 
 template <typename T, unsigned D>

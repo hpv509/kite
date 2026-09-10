@@ -5,9 +5,10 @@
 /*                                                         */
 /***********************************************************/
 
-template <typename T,unsigned D>
+#include "Pairing.hpp"
+template <typename T, unsigned D>
 struct Vacancy_Operator {
-  static inline constexpr unsigned is_bdg = LatticeStructure<D>::is_bdg;
+  static inline constexpr unsigned is_bdg = pairing::is_bdg;
   LatticeStructure<D> &r;
   KPMRandom<T> &rnd;
   char *name;

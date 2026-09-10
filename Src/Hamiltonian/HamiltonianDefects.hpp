@@ -5,9 +5,10 @@
 /*                                                         */
 /***********************************************************/
 
+#include "Pairing.hpp"
 template <typename T, unsigned D>
 struct Defect_Operator : public ComplexTraits<T> {
-  static inline constexpr unsigned is_bdg = LatticeStructure<D>::is_bdg;
+  static inline constexpr unsigned is_bdg = pairing::is_bdg;
   using value_type = typename extract_scalar<T>::type;
   using ComplexTraits<T>::multEiphase;
   double                                   p;                        // Concentration of defects

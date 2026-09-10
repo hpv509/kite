@@ -116,6 +116,7 @@ void Simulation<T, D>::s_wave_clean(
   Coordinates<std::size_t, D + 1> local(r.Ld);
   const value_type beta = beta_ * energy_scale;
   const value_type mu = mu_ / energy_scale;
+  h.bdg.set_chemical_potential(mu);
   const value_type u = u_ / energy_scale;
   const Eigen::Array<value_type, -1, 1> gamma = gamma_ / energy_scale;
   const Eigen::Array<value_type, -1, 1> delta = delta_ / energy_scale;
@@ -126,7 +127,7 @@ void Simulation<T, D>::s_wave_clean(
     Coefficients::build_fermi_sqrt<value_type>(beta, 0.0);
 
   h.bdg.set_chemical_potential(mu);
-  h.bdg.init_fields(delta, gamma);
+  h.bdg.init_sw(delta, gamma);
 
   Eigen::Array<T, -1, 1> sum_delta(r.Sized);
   sum_delta.setZero();

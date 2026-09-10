@@ -129,7 +129,7 @@ void Simulation<T, D>::s_wave(
   //   Coefficients::build_free_energy<value_type>(beta, 0.0) * energy_scale;
 
   h.bdg.set_chemical_potential(mu);
-  h.bdg.init_fields(delta, gamma);
+  h.bdg.init_sw(delta, gamma);
 
   Eigen::Array<value_type, -1, 1> sum_gamma(r.Sized);
   sum_gamma.setZero();

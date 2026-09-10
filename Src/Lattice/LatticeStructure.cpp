@@ -5,14 +5,12 @@
 /*                                                         */
 /***********************************************************/
 
-
-
-
 #include "Generic.hpp"
 #include "ComplexTraits.hpp"
 #include "myHDF5.hpp"
 #include "Coordinates.hpp"
 #include "LatticeStructure.hpp"
+#include "Pairing.hpp"
 
 template <unsigned D>
 LatticeStructure<D>::LatticeStructure(char *name )
@@ -87,14 +85,13 @@ LatticeStructure<D>::LatticeStructure(char *name )
   dist.set_coord(unsigned(thread_id));
   
   // Test if subdomain is in the Global border and if it has open boundaries set to FALSE
-  for(unsigned i = 0; i < D; i++)
-    {
-      boundary[i][0] = (dist.coord[i] == 0         && Bd[i] == 0 ? false : true); 
-      boundary[i][1] = (dist.coord[i] == nd[i] - 1 && Bd[i] == 0 ? false : true);	
-    }
-    
-  Io = (is_bdg + 1) * Orb;
-  offset = is_bdg * Sized;
+  for (unsigned i = 0; i < D; i++) {
+    boundary[i][0] = (dist.coord[i] == 0 && Bd[i] == 0 ? false : true);
+    boundary[i][1] = (dist.coord[i] == nd[i] - 1 && Bd[i] == 0 ? false : true);
+  }
+
+  Io = (pairing::is_bdg + 1) * Orb;
+  offset = pairing::is_bdg * Sized;
 }
 
 template <unsigned D>

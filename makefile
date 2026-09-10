@@ -3,7 +3,7 @@ CXX     := g++
 OBJDIR  := $(PREFIX)/.obj
 
 # Eigen-Dir
-EIGEN_INC := -I/usr/local/include/eigen3
+EIGEN_INC := -I/usr/include/eigen3
 
 # HDF5-Flags
 HDF5_LIBS   := -lhdf5_cpp -lhdf5
@@ -20,7 +20,7 @@ CPPFLAGS := $(EIGEN_INC) \
 	-ISrc/Vector \
 	-ISrc/Simulation \
 	-DCOMPILE_WAVEPACKET=0 \
-	-DINTERACTION=1 \
+	-DPAIRING=2 \
 	$(HDF5_FLAGS)
 
 CXXFLAGS := -std=c++20 -O3 -fopenmp

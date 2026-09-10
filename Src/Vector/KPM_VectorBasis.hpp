@@ -5,38 +5,49 @@
 /*                                                         */
 /***********************************************************/
 
+#ifndef KPM_VECTOR_BASIS_H_
+#define KPM_VECTOR_BASIS_H_
 template <typename T, unsigned D>
 class KPM_Vector;
 
 template <typename T, unsigned D>
-class KPM_VectorBasis: public ComplexTraits<T> {
+class KPM_VectorBasis : public ComplexTraits<T> {
 protected:
   int index;
   const int memory;
-  Simulation<T,D> & simul;
-  Hamiltonian<T,D>           & h;
+  Simulation<T, D> &simul;
+  Hamiltonian<T, D> &h;
   const std::size_t offset;
+
 public:
-  static inline constexpr unsigned is_bdg = LatticeStructure<D>::is_bdg;
+  static inline constexpr unsigned is_bdg = pairing::is_bdg;
   using value_type = typename extract_scalar<T>::type;
   using ComplexTraits<T>::assign_value;
   using ComplexTraits<T>::myconj;
   using ComplexTraits<T>::multEiphase;
   using ComplexTraits<T>::aux_wr;
-  Eigen::Matrix <T, -1, -1> v;
-  KPM_VectorBasis(int mem,  Simulation<T,D> & sim);
-  void     set_index(int i);
-  void     inc_index();
-  void     dec_index();
+  Eigen::Matrix<T, -1, -1> v;
+  KPM_VectorBasis(int mem, Simulation<T, D> &sim);
+  void set_index(int i);
+  void inc_index();
+  void dec_index();
   unsigned get_index();
-  bool     aux_test(T & x, T & y );
+  bool aux_test(T &x, T &y);
   template <unsigned MULT>
-  void     Multiply();
-  void     Velocity(KPM_Vector<T,D> * kpm_final, std::vector<std::vector<unsigned>> & indices, int axis);
-  void     Position(const unsigned, KPM_Vector<T, D> *);
-  void     cheb_iteration(unsigned );
-  
-  template <unsigned MULT, bool VELOCITY>  
-  void     multiply_defect(std::size_t istr, T* & phi0, T* & phiM1, unsigned axis);
-  void     build_defect_planewave(Eigen::Matrix<double,-1,1> & k , Eigen::Matrix<T,-1,1> & weight );
+  void Multiply();
+  void Velocity(
+    KPM_Vector<T, D> *kpm_final,
+    std::vector<std::vector<unsigned>> &indices,
+    int axis
+  );
+  void Position(const unsigned, KPM_Vector<T, D> *);
+  void cheb_iteration(unsigned);
+
+  template <unsigned MULT, bool VELOCITY>
+  void multiply_defect(std::size_t istr, T *&phi0, T *&phiM1, unsigned axis);
+  void build_defect_planewave(
+    Eigen::Matrix<double, -1, 1> &k,
+    Eigen::Matrix<T, -1, 1> &weight
+  );
 };
+#endif

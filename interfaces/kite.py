@@ -344,6 +344,287 @@ class StructuralDisorder:
         if len(nodes_map) > self._num_nodes:
             self._num_nodes = len(nodes_map)
 
+# ##############################################################################
+# Inter-site (bond) pairing channel.
+#
+# This class carries the structure of the anomalous (pairing) part of the BdG
+# Hamiltonian: which orbital pairs are connected by a pairing bond, across which
+# relative unit cell, with which seed amplitude and which interaction strength.
+#
+# It is deliberately not the on-site channel.  The on-site s-wave amplitude is a
+# separate object handled by the s_wave calculation; add_pairing() refuses the
+# term that would collide with it (same orbital, zero relative index).
+#
+# Spin singlet is assumed throughout: Delta_{ji}(-R) = +Delta_{ij}(R).
+#
+# The exported distance encoding is identical to the one used for the hoppings
+# ('d' dataset):  d = sum_dim (R_dim + 1) * 3**dim  +  jo * 3**D
+# so the C++ side can reuse Coordinates<.,D+1> with radices r.lB3 = (3,...,3,Orb)
+# without any new machinery.  Note this restricts R_dim to {-1, 0, +1}.
+# ##############################################################################
+
+class Pairing:
+    def __init__(self, lattice, interaction=0.0, hubbard=0.0, onsite_delta=0.0):
+        self._lattice = lattice
+        self._default_interaction = float(interaction)
+        self._default_hubbard = float(hubbard)
+        self._default_onsite_delta = complex(onsite_delta)
+        self._onsite_delta = {}
+
+        self._lattice = lattice
+        self._default_interaction = float(interaction)
+
+        vectors = np.asarray(lattice.vectors)
+        self._space_size = vectors.shape[0]
+        num_orbitals = np.zeros(lattice.nsub, dtype=np.int64)
+
+        for name, sub in lattice.sublattices.items():
+            num_orbitals[sub.alias_id] = np.asarray(sub.energy).shape[0]
+        self._num_orbitals = num_orbitals
+        self._num_orbitals_total = int(np.sum(num_orbitals))
+        self._orbitals_before = np.cumsum(num_orbitals) - num_orbitals
+
+        self._terms = []
+
+    def add_onsite_pairing(self, sub, delta=None, hubbard=None):
+        alias = self._alias(sub)
+        io0 = int(self._orbitals_before[alias])
+        n = int(self._num_orbitals[alias])
+        d = self._default_onsite_delta if delta is None else complex(delta)
+        for k in range(n):
+            self._onsite[io0 + k] = d
+
+    def add_pairing(self, relative_index, from_sub, to_sub, delta,
+                    interaction=None):
+        """Add a pairing bond, with the same call signature as add_hoppings.
+            pairing.add_pairing([0, 0], 'A', 'B', delta_ab)
+            pairing.add_pairing([-1, 0], 'A', 'B', delta_ab)
+        Parameters
+        ----------
+        relative_index : array_like of int
+            Relative unit-cell index R of the target site.  Each component must be
+            in {-1, 0, +1}.
+        from_sub, to_sub : str
+            Sublattice names.
+        delta : scalar or (n_from, n_to) array
+            Seed pairing amplitude Delta_{ij}(R).  May be complex.
+        interaction : float, optional
+            Per-bond interaction strength V.  Defaults to the value given to the
+            constructor.
+
+        The reverse bond (to_sub, from_sub, -R) is generated automatically with
+        amplitude delta^T (singlet) and must not be added by hand unless it is
+        consistent with that.
+        """
+        D = self._space_size
+
+        R = np.asarray(relative_index, dtype=np.int64).ravel()
+        if R.size < D:
+            raise SystemExit(
+                'Pairing.add_pairing: relative_index has {} components but the '
+                'lattice is {}D.'.format(R.size, D))
+        R = R[0:D]
+        if np.any(np.abs(R) > 1):
+            raise SystemExit(
+                'Pairing.add_pairing: |relative_index| > 1 is not representable '
+                'in the radix-3 distance encoding shared with the hoppings. '
+                'Got {}.'.format(list(R)))
+
+        from_id = self._alias(from_sub)
+        to_id = self._alias(to_sub)
+
+        n_from = int(self._num_orbitals[from_id])
+        n_to = int(self._num_orbitals[to_id])
+
+        delta = np.atleast_2d(np.asarray(delta, dtype=np.complex128))
+        if delta.shape == (1, 1) and (n_from, n_to) != (1, 1):
+            delta = np.full((n_from, n_to), delta[0, 0], dtype=np.complex128)
+        if delta.shape != (n_from, n_to):
+            raise SystemExit(
+                'Pairing.add_pairing: delta has shape {} but sublattices '
+                "'{}' -> '{}' require {}.".format(
+                    delta.shape, from_sub, to_sub, (n_from, n_to)))
+        V = self._default_interaction if interaction is None else float(interaction)
+        self._terms.append({
+            'relative_index': R,
+            'from_id': from_id,
+            'to_id': to_id,
+            'from_sub': from_sub,
+            'to_sub': to_sub,
+            'delta': delta
+        })
+
+    def _alias(self, name):
+        if name not in self._lattice.sublattices:
+            raise SystemExit(
+                "Pairing: sublattice '{}' is not defined in the lattice.".format(name))
+        return self._lattice.sublattices[name].alias_id
+
+    def _encode(self, R, jo):
+        """d = sum_dim (R_dim + 1) 3**dim + jo * 3**D, matching the hopping 'd'."""
+        D = self._space_size
+        rel = int(np.dot(np.asarray(R) + 1, 3 ** np.arange(D, dtype=np.int64)))
+        return rel + int(jo) * 3 ** D
+
+    @staticmethod
+    def _key(io, jo, R):
+        return (int(io), int(jo), tuple(int(x) for x in R))
+
+    def _build(self):
+        """Expand to global orbitals, generate partners, order into ragged rows.
+        Returns a dict of dense (Norb, maxP) arrays plus NPairings.
+        """
+        D = self._space_size
+        Norb = self._num_orbitals_total
+        before = self._orbitals_before
+
+        explicit = {}
+
+        s_delta0 = np.full(Norb, self._default_onsite_delta, dtype=np.complex128)
+        for io, d in self._onsite_delta.items():
+            s_delta0[io] = d
+
+        for term in self._terms:
+            R = term['relative_index']
+            it = np.nditer(term['delta'], flags=['multi_index'])
+            while not it.finished:
+                io = int(before[term['from_id']] + it.multi_index[0])
+                jo = int(before[term['to_id']] + it.multi_index[1])
+
+                if io == jo and not np.any(R):
+                    raise SystemExit(
+                        'Pairing.add_pairing: on-site term (orbital {} to itself '
+                        'at R=0) is not allowed here. The on-site s-wave channel '
+                        'is handled in add_onsite_pairing().'.format(io))
+
+                key = self._key(io, jo, R)
+                val = complex(it[0])
+                if key in explicit:
+                    raise SystemExit(
+                        'Pairing.add_pairing: bond {} was specified twice.'.format(key))
+                explicit[key] = {'delta': val, 'V': term['interaction']}
+                it.iternext()
+
+        if not explicit:
+            raise SystemExit('Pairing: no pairing bonds were added.')
+
+        bonds = dict(explicit)
+        for key, rec in explicit.items():
+            io, jo, R = key
+            rkey = self._key(jo, io, [-x for x in R])
+            expected = rec['delta']
+            if rkey in explicit:
+                got = explicit[rkey]['delta']
+                if not np.isclose(got, expected, rtol=1e-10, atol=1e-14):
+                    raise SystemExit(
+                        'Pairing: bond {} and its reverse {} are inconsistent with '
+                        'singlet symmetry. Expected Delta_ji(-R) = {:+.6g}{:+.6g}j, '
+                        'got {:+.6g}{:+.6g}j. Add only one direction and let the '
+                        'reverse be generated.'.format(
+                            key, rkey,
+                            expected.real, expected.imag, got.real, got.imag))
+                if not np.isclose(explicit[rkey]['V'], rec['V']):
+                    raise SystemExit(
+                        'Pairing: bond {} and its reverse {} carry different '
+                        'interaction strengths.'.format(key, rkey))
+            else:
+                bonds[rkey] = {'delta': expected, 'V': rec['V']}
+
+        def is_rep(key):
+            io, jo, R = key
+            rkey = self._key(jo, io, [-x for x in R])
+            return key <= rkey
+
+        rows = [[] for _ in range(Norb)]
+        for key in bonds:
+            io, jo, R = key
+            rows[io].append((self._encode(R, jo), key))
+        for io in range(Norb):
+            rows[io].sort(key=lambda p: p[0])
+
+        num_pairings = np.array([len(r) for r in rows], dtype=np.int64)
+        max_p = int(num_pairings.max())
+
+        slot = {}
+        for io in range(Norb):
+            for b, (_, key) in enumerate(rows[io]):
+                slot[key] = b
+
+        d_pair = np.zeros((Norb, max_p), dtype=np.int64)
+        delta0 = np.zeros((Norb, max_p), dtype=np.complex128)
+        rep = np.zeros((Norb, max_p), dtype=np.int64)
+        rev_bond = -np.ones((Norb, max_p), dtype=np.int64)
+        rev_orb = -np.ones((Norb, max_p), dtype=np.int64)
+
+        for io in range(Norb):
+            for b, (d, key) in enumerate(rows[io]):
+                _, jo, R = key
+                rkey = self._key(jo, io, [-x for x in R])
+                d_pair[io, b] = d
+                delta0[io, b] = bonds[key]['delta']
+                rep[io, b] = 1 if is_rep(key) else 0
+                rev_orb[io, b] = jo
+                rev_bond[io, b] = slot[rkey]
+
+        return {
+            'NPairings': num_pairings,
+            'd': d_pair,
+            'Delta0': delta0,
+            'Rep': rep,
+            'ReverseOrbital': rev_orb,
+            'ReverseBond': rev_bond,
+            'NumBonds': int(num_pairings.sum()),
+            'NumUniqueBonds': int(rep.sum()),
+            'MaxPairings': max_p,
+        }
+
+    def _export(self, f, config, complx):
+        tab = self._build()
+        scale = config.energy_scale
+        grp = f.create_group('Pairing')
+        grp.create_dataset('NPairings', data=tab['NPairings'], dtype='u4')
+        grp.create_dataset('d', data=tab['d'], dtype='i4')
+        grp.create_dataset('ReverseOrbital', data=tab['ReverseOrbital'], dtype='i4')
+        grp.create_dataset('ReverseBond', data=tab['ReverseBond'], dtype='i4')
+        grp.create_dataset('Rep', data=tab['Rep'], dtype='i4')
+        grp.create_dataset('V', data=self._interaction / scale, dtype=np.float64)
+        grp.create_dataset('U', data=self._hubbard / scale, dtype=np.float64)
+
+        delta0   = tab['Delta0']  / scale
+        s_delta0 = tab['SDelta0'] / scale
+        if complx:
+            grp.create_dataset('Delta0',  data=delta0.astype(config.type))
+            grp.create_dataset('SDelta0', data=s_delta0.astype(config.type))
+        else:
+            grp.create_dataset('Delta0',  data=delta0.real.astype(config.type))
+            grp.create_dataset('SDelta0', data=s_delta0.real.astype(config.type))
+
+        delta0 = tab['Delta0'] / scale
+        if complx:
+            grp.create_dataset('Delta0', data=delta0.astype(config.type))
+        else:
+            grp.create_dataset('Delta0', data=delta0.real.astype(config.type))
+
+    def has_complex_amplitudes(self):
+        for term in self._terms:
+            if np.linalg.norm(np.asarray(term['delta']).imag) > 0:
+                return True
+        return False
+
+
+class BdG:
+    def __init__(self, chemical_potential=0.0, beta=0.0):
+        self.chemical_potential = float(chemical_potential)
+        self.beta = float(beta)
+
+    def _export(self, f, config):
+        scale = config.energy_scale
+        grp = f.require_group('Hamiltonian').create_group('BdG')
+        grp.create_dataset('ChemicalPotential',
+                           data=self.chemical_potential / scale, dtype=np.float64)
+        grp.create_dataset('Beta',
+                           data=self.beta * scale, dtype=np.float64)
+
 
 # Class that introduces Disorder into the initially built lattice.
 # The informations about the disorder are the type, mean value, and standard deviation. The function that you could use
@@ -486,6 +767,11 @@ class Calculation:
         return self._p_wave
 
     @property
+    def get_p_wave_c(self):
+        """Returns the requested p-wave calculation enforcing translation symmetry."""
+        return self._p_wave_c
+
+    @property
     def get_dos(self):
         """Returns the requested DOS functions."""
         return self._dos
@@ -588,6 +874,7 @@ class Calculation:
         self._s_wave                         = []
         self._s_wave_c                       = []
         self._p_wave                         = []
+        self._p_wave_c                       = []
         self._dos                            = []
         self._ldos                           = []
         self._ldos_map                       = []
@@ -761,6 +1048,56 @@ class Calculation:
             's_delta': s_delta,
             'nn_delta': nn_delta
         })
+
+    def p_wave_clean(
+        self,
+        num_random,
+        beta,
+        chemical_potential,
+        num_iterations,
+        prev_iterations=0,
+        weight_r=1.0,
+        weight_alpha=1.0,
+    ):
+        """Self-consistent onsite s-wave BdG calculation.
+
+        Parameters
+        ----------
+        num_random : int
+            Number of random vectors.
+        beta : float
+            Inverse of temperature.
+        chemical_potential : float
+            Chemical potential.
+        u : float
+            Onsite interactions strength.
+        gamma : float
+            Hartree density.
+        delta : float
+            Pairing term.
+        num_iterations : int
+            Number of self-consistency iterations to run.
+        prev_iterations : int
+            Iterations already completed in a previous run. Restores the
+            Robbins-Monro weight state so a restart continues the same
+            averaging sequence rather than restarting it.
+        weight_r : float
+            Weight amplitude.
+        weight_alpha : float
+            Convergence of the averaging
+            requires 0.5 < weight_alpha <= 1.
+        """
+        self._p_wave_c.append(
+            {
+                "num_random": num_random,
+                "num_iterations": num_iterations,
+                "prev_iterations": prev_iterations,
+                "beta": beta,
+                "chemical_potential": chemical_potential,
+                "weight_r": weight_r,
+                "weight_alpha": weight_alpha,
+            }
+        )
 
     def dos(self, num_points, num_moments, num_random, num_disorder=1):
         """Calculate the density of states as a function of energy
@@ -1439,6 +1776,15 @@ def config_system(lattice, config, calculation, modification=None, **kwargs):
         config._is_complex = 1
         config.set_type()
 
+    if kwargs.get('pairing', None) is not None and complx == 0:
+        print('A pairing channel was supplied, but is_complex is 0. Automatically turning is_complex to 1!')
+        config._is_complex = 1
+        config.set_type()
+
+    if calculation.get_p_wave and kwargs.get('pairing', None) is None:
+        raise SystemExit('A p_wave calculation was requested but no pairing channel was supplied. '
+                         'Build a kite.Pairing(lattice) and pass it as config_system(..., pairing=pairing).')
+
 
     # hamiltonian is complex 1 or real 0
     complx = int(config.comp)
@@ -1447,6 +1793,7 @@ def config_system(lattice, config, calculation, modification=None, **kwargs):
 
     disorder = kwargs.get('disorder', None)
     disorder_structural = kwargs.get('disorder_structural', None)
+    pairing = kwargs.get('pairing', None)
     print('\n##############################################################################\n')
     print('SCALING:\n')
     # if bounds are not specified, find a rough estimate
@@ -1678,6 +2025,9 @@ def config_system(lattice, config, calculation, modification=None, **kwargs):
     else:
         # hoppings
         grp.create_dataset('Hoppings', data=(t.real.astype(config.type)) / config.energy_scale)
+    # bond-resolved pairing channel (see class Pairing)
+    if pairing:
+        pairing._export(f, config, complx)
     # magnetic field
     if modification.magnetic_field or modification.flux:
         print('\n##############################################################################\n')
@@ -1907,11 +2257,6 @@ def config_system(lattice, config, calculation, modification=None, **kwargs):
         grpc_p.create_dataset('NumRandoms', data=single_s_wave['num_random'], dtype=np.int32)
         grpc_p.create_dataset('NumIterations', data=single_s_wave['num_iterations'], dtype=np.int32)
         grpc_p.create_dataset('PrevIterations', data=single_s_wave['prev_iterations'], dtype=np.int32)
-        grpc_p.create_dataset('Beta', data=single_s_wave['beta'], dtype=np.float64)
-        grpc_p.create_dataset('ChemicalPotential', data=single_s_wave['chemical_potential'], dtype=np.float64)
-        grpc_p.create_dataset('U', data=single_s_wave['u'], dtype=np.float64)
-        grpc_p.create_dataset('Gamma', data=np.asarray(single_s_wave['gamma']), dtype=np.float64)
-        grpc_p.create_dataset('Delta', data=np.asarray(single_s_wave['delta']), dtype=np.float64)
         grpc_p.create_dataset('Wr', data=single_s_wave['weight_r'], dtype=np.float64)
         grpc_p.create_dataset('Walpha', data=single_s_wave['weight_alpha'], dtype=np.float64)
 
@@ -1930,6 +2275,17 @@ def config_system(lattice, config, calculation, modification=None, **kwargs):
         grpc_p.create_dataset('Gamma', data=single_p_wave['gamma'], dtype=np.float64)
         grpc_p.create_dataset('SDelta', data=single_p_wave['s_delta'], dtype=np.float64)
         grpc_p.create_dataset('NNDelta', data=single_p_wave['nn_delta'], dtype=np.float64)
+
+
+    if calculation.get_p_wave_c:
+        single_p_wave = calculation.get_p_wave_c[0]
+
+        grpc_p = grpc.create_group('p_wave_c')
+        grpc_p.create_dataset('NumRandoms', data=single_p_wave['num_random'], dtype=np.int32)
+        grpc_p.create_dataset('NumIterations', data=single_p_wave['num_iterations'], dtype=np.int32)
+        grpc_p.create_dataset('PrevIterations', data=single_p_wave['prev_iterations'], dtype=np.int32)
+        grpc_p.create_dataset('Wr', data=single_p_wave['weight_r'], dtype=np.float64)
+        grpc_p.create_dataset('Walpha', data=single_p_wave['weight_alpha'], dtype=np.float64)
 
     if calculation.get_dos:
         grpc_p = grpc.create_group('dos')
