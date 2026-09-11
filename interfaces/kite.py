@@ -371,13 +371,9 @@ class Pairing:
         self._default_onsite_delta = complex(onsite_delta)
         self._onsite_delta = {}
 
-        self._lattice = lattice
-        self._default_interaction = float(interaction)
-
         vectors = np.asarray(lattice.vectors)
         self._space_size = vectors.shape[0]
         num_orbitals = np.zeros(lattice.nsub, dtype=np.int64)
-
         for name, sub in lattice.sublattices.items():
             num_orbitals[sub.alias_id] = np.asarray(sub.energy).shape[0]
         self._num_orbitals = num_orbitals
@@ -386,13 +382,13 @@ class Pairing:
 
         self._terms = []
 
-    def add_onsite_pairing(self, sub, delta=None, hubbard=None):
+    def add_onsite_pairing(self, sub, delta=None):
         alias = self._alias(sub)
         io0 = int(self._orbitals_before[alias])
         n = int(self._num_orbitals[alias])
         d = self._default_onsite_delta if delta is None else complex(delta)
         for k in range(n):
-            self._onsite[io0 + k] = d
+            self._onsite_delta[io0 + k] = d
 
     def add_pairing(self, relative_index, from_sub, to_sub, delta,
                     interaction=None):
@@ -451,7 +447,8 @@ class Pairing:
             'to_id': to_id,
             'from_sub': from_sub,
             'to_sub': to_sub,
-            'delta': delta
+            'delta': delta,
+            'interaction': V,
         })
 
     def _alias(self, name):
@@ -506,7 +503,12 @@ class Pairing:
                 it.iternext()
 
         if not explicit:
-            raise SystemExit('Pairing: no pairing bonds were added.')
+            return {
+                'NPairings': np.zeros(Norb, dtype=np.int64),
+                'SDelta0': s_delta0,
+                'NumBonds': 0,
+                'MaxPairings': 0,
+            }
 
         bonds = dict(explicit)
         for key, rec in explicit.items():
@@ -582,23 +584,24 @@ class Pairing:
         tab = self._build()
         scale = config.energy_scale
         grp = f.create_group('Pairing')
+
+        grp.create_dataset('U', data=self._default_hubbard / scale,
+                           dtype=np.float64)
+        s_delta0 = tab['SDelta0'] / scale
+        if complx:
+            grp.create_dataset('SDelta0', data=s_delta0.astype(config.type))
+        else:
+            grp.create_dataset('SDelta0', data=s_delta0.real.astype(config.type))
+
+        if tab['NumBonds'] == 0:
+            return
         grp.create_dataset('NPairings', data=tab['NPairings'], dtype='u4')
         grp.create_dataset('d', data=tab['d'], dtype='i4')
         grp.create_dataset('ReverseOrbital', data=tab['ReverseOrbital'], dtype='i4')
         grp.create_dataset('ReverseBond', data=tab['ReverseBond'], dtype='i4')
         grp.create_dataset('Rep', data=tab['Rep'], dtype='i4')
-        grp.create_dataset('V', data=self._interaction / scale, dtype=np.float64)
-        grp.create_dataset('U', data=self._hubbard / scale, dtype=np.float64)
-
-        delta0   = tab['Delta0']  / scale
-        s_delta0 = tab['SDelta0'] / scale
-        if complx:
-            grp.create_dataset('Delta0',  data=delta0.astype(config.type))
-            grp.create_dataset('SDelta0', data=s_delta0.astype(config.type))
-        else:
-            grp.create_dataset('Delta0',  data=delta0.real.astype(config.type))
-            grp.create_dataset('SDelta0', data=s_delta0.real.astype(config.type))
-
+        grp.create_dataset('V', data=self._default_interaction / scale,
+                           dtype=np.float64)
         delta0 = tab['Delta0'] / scale
         if complx:
             grp.create_dataset('Delta0', data=delta0.astype(config.type))
@@ -606,6 +609,11 @@ class Pairing:
             grp.create_dataset('Delta0', data=delta0.real.astype(config.type))
 
     def has_complex_amplitudes(self):
+        for d in self._onsite_delta.values():
+            if abs(d.imag) > 0:
+                return True
+        if abs(self._default_onsite_delta.imag) > 0:
+            return True
         for term in self._terms:
             if np.linalg.norm(np.asarray(term['delta']).imag) > 0:
                 return True
@@ -613,18 +621,25 @@ class Pairing:
 
 
 class BdG:
-    def __init__(self, chemical_potential=0.0, beta=0.0):
+    def __init__(self, chemical_potential=0.0, beta=0.0, hartree=None):
         self.chemical_potential = float(chemical_potential)
         self.beta = float(beta)
+        self.hartree = None if hartree is None else \
+            np.asarray(hartree, dtype=np.float64).ravel()
 
-    def _export(self, f, config):
+    def _export(self, f, config, norb):
         scale = config.energy_scale
         grp = f.require_group('Hamiltonian').create_group('BdG')
         grp.create_dataset('ChemicalPotential',
                            data=self.chemical_potential / scale, dtype=np.float64)
         grp.create_dataset('Beta',
                            data=self.beta * scale, dtype=np.float64)
-
+        h = np.zeros(norb) if self.hartree is None else self.hartree
+        if h.size != norb:
+            raise SystemExit(
+                'BdG: hartree has {} entries but the lattice has {} orbitals.'
+                .format(h.size, norb))
+        grp.create_dataset('Hartree', data=h / scale, dtype=np.float64)
 
 # Class that introduces Disorder into the initially built lattice.
 # The informations about the disorder are the type, mean value, and standard deviation. The function that you could use
@@ -804,7 +819,7 @@ class Calculation:
 
     @property
     def get_localized_wave_packet(self):
-        """Returns the requested wave packet time evolution function, with a localized or 
+        """Returns the requested wave packet time evolution function, with a localized or
         gaussian wavepacket with spectrum filtering
         ."""
         return self._localized_wave_packet
@@ -959,61 +974,15 @@ class Calculation:
             }
         )
 
-    def s_wave_clean(
-        self,
-        num_random,
-        beta,
-        chemical_potential,
-        u,
-        gamma,
-        delta,
-        num_iterations,
-        prev_iterations=0,
-        weight_r=1.0,
-        weight_alpha=1.0,
-    ):
-        """Self-consistent onsite s-wave BdG calculation.
-
-        Parameters
-        ----------
-        num_random : int
-            Number of random vectors.
-        beta : float
-            Inverse of temperature.
-        chemical_potential : float
-            Chemical potential.
-        u : float
-            Onsite interactions strength.
-        gamma : float
-            Hartree density.
-        delta : float
-            Pairing term.
-        num_iterations : int
-            Number of self-consistency iterations to run.
-        prev_iterations : int
-            Iterations already completed in a previous run. Restores the
-            Robbins-Monro weight state so a restart continues the same
-            averaging sequence rather than restarting it.
-        weight_r : float
-            Weight amplitude.
-        weight_alpha : float
-            Convergence of the averaging
-            requires 0.5 < weight_alpha <= 1.
-        """
-        self._s_wave_c.append(
-            {
-                "num_random": num_random,
-                "num_iterations": num_iterations,
-                "prev_iterations": prev_iterations,
-                "beta": beta,
-                "chemical_potential": chemical_potential,
-                "u": u,
-                "gamma": gamma,
-                "delta": delta,
-                "weight_r": weight_r,
-                "weight_alpha": weight_alpha,
-            }
-        )
+    def s_wave_clean(self, num_random, num_iterations,
+                     prev_iterations=0, weight_r=1.0, weight_alpha=1.0):
+        self._s_wave_c.append({
+            "num_random": num_random,
+            "num_iterations": num_iterations,
+            "prev_iterations": prev_iterations,
+            "weight_r": weight_r,
+            "weight_alpha": weight_alpha,
+        })
 
     def p_wave(self, num_random, beta, chemical_potential, u, v, gamma, s_delta, nn_delta):
         """Self-consistent nearest-neighbour BdG calculation.
@@ -1052,48 +1021,16 @@ class Calculation:
     def p_wave_clean(
         self,
         num_random,
-        beta,
-        chemical_potential,
         num_iterations,
         prev_iterations=0,
         weight_r=1.0,
         weight_alpha=1.0,
     ):
-        """Self-consistent onsite s-wave BdG calculation.
-
-        Parameters
-        ----------
-        num_random : int
-            Number of random vectors.
-        beta : float
-            Inverse of temperature.
-        chemical_potential : float
-            Chemical potential.
-        u : float
-            Onsite interactions strength.
-        gamma : float
-            Hartree density.
-        delta : float
-            Pairing term.
-        num_iterations : int
-            Number of self-consistency iterations to run.
-        prev_iterations : int
-            Iterations already completed in a previous run. Restores the
-            Robbins-Monro weight state so a restart continues the same
-            averaging sequence rather than restarting it.
-        weight_r : float
-            Weight amplitude.
-        weight_alpha : float
-            Convergence of the averaging
-            requires 0.5 < weight_alpha <= 1.
-        """
         self._p_wave_c.append(
             {
                 "num_random": num_random,
                 "num_iterations": num_iterations,
                 "prev_iterations": prev_iterations,
-                "beta": beta,
-                "chemical_potential": chemical_potential,
                 "weight_r": weight_r,
                 "weight_alpha": weight_alpha,
             }
@@ -1235,7 +1172,7 @@ class Calculation:
                               num_moments = 0,
                               width = -1.,
                               energy_window = [0.,0.],
-                              initial_wavevector = None, 
+                              initial_wavevector = None,
                               probes = None,
                               sample_start = -1,
                               sample_L = -1
@@ -1257,7 +1194,7 @@ class Calculation:
             Width of the gaussian envelope in real space.
         initial_wavevector : np.array
             Wavevector the gaussian is centered around, in reciprocal lattice coordinates.
-        energy_window : np.array 
+        energy_window : np.array
             Localized packet will be filtered to only keep eigenstates with energy inside this window.
         probes : np.array
             List of positions expressed in lattice coordinates where the propagator is calculated.
@@ -1266,11 +1203,11 @@ class Calculation:
         sample_L : Length of the disordered sample.
         """
 
-        self._localized_wave_packet.append({'time': time, 
+        self._localized_wave_packet.append({'time': time,
                                             'num_measures': num_measures,
                                             'num_moments': num_moments,
                                             'initial_pos': initial_pos,
-                                            'width': width, 
+                                            'width': width,
                                             'initial_wavevector': initial_wavevector,
                                             'energy_window': energy_window,
                                             'probes': probes,
@@ -1781,10 +1718,15 @@ def config_system(lattice, config, calculation, modification=None, **kwargs):
         config._is_complex = 1
         config.set_type()
 
-    if calculation.get_p_wave and kwargs.get('pairing', None) is None:
-        raise SystemExit('A p_wave calculation was requested but no pairing channel was supplied. '
-                         'Build a kite.Pairing(lattice) and pass it as config_system(..., pairing=pairing).')
-
+    if calculation.get_s_wave_c and kwargs.get('pairing', None) is None:
+        raise SystemExit(
+            'An s_wave_clean calculation was requested but no pairing channel '
+            'was supplied. Build a kite.Pairing(lattice, hubbard=U) and pass it '
+            'as config_system(..., pairing=pairing).')
+    if (calculation.get_s_wave_c or calculation.get_p_wave_c) and kwargs.get('bdg', None) is None:
+        raise SystemExit(
+            'A self-consistent BdG calculation was requested but no kite.BdG '
+            'object was supplied. Chemical potential and beta now live there.')
 
     # hamiltonian is complex 1 or real 0
     complx = int(config.comp)
@@ -1794,6 +1736,7 @@ def config_system(lattice, config, calculation, modification=None, **kwargs):
     disorder = kwargs.get('disorder', None)
     disorder_structural = kwargs.get('disorder_structural', None)
     pairing = kwargs.get('pairing', None)
+    bdg = kwargs.get('bdg', None)
     print('\n##############################################################################\n')
     print('SCALING:\n')
     # if bounds are not specified, find a rough estimate
@@ -2028,6 +1971,8 @@ def config_system(lattice, config, calculation, modification=None, **kwargs):
     # bond-resolved pairing channel (see class Pairing)
     if pairing:
         pairing._export(f, config, complx)
+    if bdg:
+        bdg._export(f, config, int(np.sum(num_orbitals)))
     # magnetic field
     if modification.magnetic_field or modification.flux:
         print('\n##############################################################################\n')

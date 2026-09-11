@@ -37,7 +37,8 @@ struct PairingStructure {
   value_type V;
   Eigen::Array<T, -1, -1> Delta0;
 
-  bool present = false;
+  bool has_bonds  = false;
+  bool has_onsite = false;
 
   Eigen::Array<unsigned, -1, 1> NPairings;
   Eigen::Array<int, -1, -1> dist;
@@ -50,12 +51,17 @@ struct PairingStructure {
   PairingStructure(char *, LatticeStructure<D> &);
 
   void allocate(Eigen::Array<T, -1, -1> &) const;
-  void
-  broadcast(const Eigen::Array<T, -1, -1> &, Eigen::Array<T, -1, -1> &) const;
-  void symmetrize_bonds(Eigen::Array<T, -1, -1> &bond_values) const;
-  void
-  symmetrize(const Eigen::Array<T, -1, -1> &, Eigen::Array<T, -1, -1> &) const;
-  void init(Eigen::Array<T, -1, -1> &) const;
+  void broadcast(const Eigen::Array<T, -1, -1> &,
+                 Eigen::Array<T, -1, -1> &) const;
+  void symmetrize_bonds(Eigen::Array<T, -1, -1> &) const;
+  void symmetrize(const Eigen::Array<T, -1, -1> &,
+                  Eigen::Array<T, -1, -1> &) const;
+
+  void allocate_s(Eigen::Array<T, -1, 1> &) const;
+  void broadcast_s(const Eigen::Array<T, -1, 1> &,
+                   Eigen::Array<T, -1, 1> &) const;
+  void orbital_sum(const Eigen::Array<T, -1, 1> &,
+                   Eigen::Array<T, -1, 1> &) const;
   void print() const;
 };
 

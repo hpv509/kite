@@ -11,32 +11,64 @@ PairingStructure<T, D>::PairingStructure(char *name, LatticeStructure<D> &rr) :
   orb = r.Orb;
   max_bonds = 0;
   n_bonds = 0;
+  U = 0;
+  V = 0;
   NPairings = Eigen::Array<unsigned, -1, 1>::Zero(orb);
-  std::string base_dir = "/Pairing/";
+  SDelta0 = Eigen::Array<T, -1, 1>::Zero(orb);
+
+  const std::string base_dir = "/Pairing/";
   std::string tmp;
+
 #pragma omp critical
   {
     H5::H5File file(name, H5F_ACC_RDONLY);
-    try {
-      H5::Exception::dontPrint();
+    H5::Exception::dontPrint();
+    tmp = "/EnergyScale";
+    get_hdf5<value_type>(&energy_scale, &file, tmp);
+
+    try { // on-site channel
+      tmp = base_dir + "U";
+      get_hdf5<value_type>(&U, &file, tmp);
+      tmp = base_dir + "SDelta0";
+      get_hdf5<T>(SDelta0.data(), &file, tmp);
+      has_onsite = true;
+    } catch (H5::Exception &e) {
+      U = 0;
+      SDelta0.setZero();
+      has_onsite = false;
+    }
+    try { // bond channel
       tmp = base_dir + "NPairings";
       get_hdf5<unsigned>(NPairings.data(), &file, tmp);
-      present = true;
+      has_bonds = (NPairings.sum() > 0);
     } catch (H5::Exception &e) {
-      present = false;
+      NPairings.setZero();
+      has_bonds = false;
     }
     file.close();
   }
-  if (!present) {
-    if constexpr (pairing::is_p_wave) {
+
+  if constexpr (pairing::is_s_wave)
+    if (!has_onsite) {
 #pragma omp master
-      std::cerr << "The build has PAIRING & nearest set but the configuration "
-                   "file carries no /Pairing group. \n";
+      std::cerr
+        << "PairingStructure: PAIRING has the onsite bit set but the "
+           "configuration file carries no /Pairing/U or /Pairing/SDelta0.\n";
 #pragma omp barrier
       exit(1);
     }
+  if constexpr (pairing::is_p_wave)
+    if (!has_bonds) {
+#pragma omp master
+      std::cerr << "PairingStructure: PAIRING has the nearest bit set but the "
+                   "configuration file carries no bond table.\n";
+#pragma omp barrier
+      exit(1);
+    }
+
+  if (!has_bonds)
     return;
-  }
+
   max_bonds = NPairings.maxCoeff();
   n_bonds = NPairings.sum();
 
@@ -45,6 +77,7 @@ PairingStructure<T, D>::PairingStructure(char *name, LatticeStructure<D> &rr) :
   rev_orb = Eigen::Array<int, -1, -1>::Constant(max_bonds, orb, -1);
   rev_bond = Eigen::Array<int, -1, -1>::Constant(max_bonds, orb, -1);
   Delta0 = Eigen::Array<T, -1, -1>::Zero(max_bonds, orb);
+  SDelta0 = Eigen::Array<T, -1, 1>::Zero(orb);
 
   Eigen::Array<double, -1, -1> v_buffer(max_bonds, orb);
 
@@ -76,6 +109,7 @@ PairingStructure<T, D>::PairingStructure(char *name, LatticeStructure<D> &rr) :
       get_hdf5<T>(SDelta0.data(), &file, tmp);
     } catch (H5::Exception &e) {
       U = 0;
+      SDelta0.setZero();
     }
     file.close();
   }
@@ -129,12 +163,82 @@ PairingStructure<T, D>::PairingStructure(char *name, LatticeStructure<D> &rr) :
 }
 
 template <typename T, unsigned D>
+void PairingStructure<T, D>::broadcast_s(
+  const Eigen::Array<T, -1, 1> &orb_values_,
+  Eigen::Array<T, -1, 1> &field_
+) const
+{
+  field_.setZero();
+  Coordinates<std::size_t, D + 1> local(r.Ld);
+
+  for (unsigned io = 0; io < orb; ++io) {
+    const T d0 = orb_values_(io);
+    if constexpr (D == 2) {
+      for (std::size_t i1 = NGHOSTS; i1 < r.Ld[1] - NGHOSTS; ++i1) {
+        const std::size_t j0 = local.set({NGHOSTS, i1, io}).index;
+        for (std::size_t i = j0, j1 = j0 + r.ld[0]; i < j1; ++i)
+          field_(i) = d0;
+      }
+    } else if constexpr (D == 3) {
+      for (std::size_t i2 = NGHOSTS; i2 < r.Ld[2] - NGHOSTS; ++i2)
+        for (std::size_t i1 = NGHOSTS; i1 < r.Ld[1] - NGHOSTS; ++i1) {
+          const std::size_t j0 = local.set({NGHOSTS, i1, i2, io}).index;
+          for (std::size_t i = j0, j1 = j0 + r.ld[0]; i < j1; ++i)
+            field_(i) = d0;
+        }
+    }
+  }
+#pragma omp barrier
+}
+
+template <typename T, unsigned D>
+void PairingStructure<T, D>::allocate_s(Eigen::Array<T, -1, 1> &field) const
+{
+  field.resize(r.Sized);
+  if (!has_onsite) {
+    field.setZero();
+    return;
+  }
+  broadcast_s(SDelta0, field);
+}
+
+template <typename T, unsigned D>
+void PairingStructure<T, D>::orbital_sum(
+  const Eigen::Array<T, -1, 1> &field_,
+  Eigen::Array<T, -1, 1> &orb_values_
+) const
+{
+  Coordinates<std::size_t, D + 1> local(r.Ld);
+  orb_values_.resize(orb);
+  orb_values_.setZero();
+
+  for (unsigned io = 0; io < orb; ++io) {
+    T acc = 0;
+    if constexpr (D == 2) {
+      for (std::size_t i1 = NGHOSTS; i1 < r.Ld[1] - NGHOSTS; ++i1) {
+        const std::size_t j0 = local.set({NGHOSTS, i1, io}).index;
+        for (std::size_t i = j0, j1 = j0 + r.ld[0]; i < j1; ++i)
+          acc += field_(i);
+      }
+    } else if constexpr (D == 3) {
+      for (std::size_t i2 = NGHOSTS; i2 < r.Ld[2] - NGHOSTS; ++i2)
+        for (std::size_t i1 = NGHOSTS; i1 < r.Ld[1] - NGHOSTS; ++i1) {
+          const std::size_t j0 = local.set({NGHOSTS, i1, i2, io}).index;
+          for (std::size_t i = j0, j1 = j0 + r.ld[0]; i < j1; ++i)
+            acc += field_(i);
+        }
+    }
+    orb_values_(io) = acc;
+  }
+}
+
+template <typename T, unsigned D>
 void PairingStructure<T, D>::symmetrize(
   const Eigen::Array<T, -1, -1> &raw,
   Eigen::Array<T, -1, -1> &result
 ) const
 {
-  if (!present)
+  if (!has_bonds)
     return;
 
   constexpr value_type half = 0.5;
@@ -172,7 +276,7 @@ void PairingStructure<T, D>::symmetrize_bonds(
   Eigen::Array<T, -1, -1> &bond_values
 ) const
 {
-  if (!present)
+  if (!has_bonds)
     return;
   constexpr value_type half = 0.5;
   const Eigen::Array<T, -1, -1> map = bond_values;
@@ -188,7 +292,7 @@ void PairingStructure<T, D>::broadcast(
   Eigen::Array<T, -1, -1> &field_
 ) const
 {
-  if (!present)
+  if (!has_bonds)
     return;
   field_.setZero();
   Coordinates<std::size_t, D + 1> local(r.Ld);
@@ -217,7 +321,7 @@ void PairingStructure<T, D>::broadcast(
 template <typename T, unsigned D>
 void PairingStructure<T, D>::allocate(Eigen::Array<T, -1, -1> &field) const
 {
-  if (!present)
+  if (!has_bonds)
     return;
   field.resize(max_bonds, r.Sized);
   broadcast(Delta0, field);
@@ -228,7 +332,7 @@ void PairingStructure<T, D>::print() const
 {
 #pragma omp master
   {
-    if (!present) {
+    if (!has_bonds) {
       std::cout << "Pairing table: absent.\n";
     } else {
       std::cout << "Pairing table: " << n_bonds << " directed bonds\n";

@@ -44,8 +44,10 @@ Hamiltonian<T, D>::Hamiltonian(
   build_Anderson_disorder();
   build_vacancies_disorder();
   build_structural_disorder();
-  if constexpr (pairing::is_bdg)
+  if constexpr (pairing::is_bdg) {
+    pr.allocate_s(bdg.s_delta);
     pr.allocate(bdg.nn_delta);
+  }
 }
 
 template <typename T, unsigned D>

@@ -25,16 +25,7 @@ struct HamiltonianBdG {
     mu = mu_rescaled;
     update_onsite();
   }
-
   void set_beta(real beta_rescaled) { beta = beta_rescaled; }
-
-  void set_hartree(const Eigen::Array<real, -1, 1> &h_phys)
-  {
-    hartree = h_phys / energy_scale;
-    update_onsite();
-  }
-  void
-  init_sw(const Eigen::Array<real, -1, 1> &, const Eigen::Array<real, -1, 1> &);
 };
 
 #endif

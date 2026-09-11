@@ -10,10 +10,8 @@ import numpy as np
 
 t = 1.0
 U = -2.0
-mu = 0.25
+mu = 0.0
 beta = 32.0
-num_random = 64
-
 delta_initial = [0.042, 0.042]
 
 id = int(sys.argv[1])
@@ -72,7 +70,13 @@ def main(N=1, onsite=None, t=1.0, t_perp=0.0):
         seed_h=id,
         seed_v=id,
     )
+    pairing = kite.Pairing(lattice, hubbard=U)
+    pairing.add_onsite_pairing("A1", delta=delta_initial[0])
+    pairing.add_onsite_pairing("B1", delta=delta_initial[1])
+
+    bdg = kite.BdG(chemical_potential=mu, beta=beta, hartree=[0.0, 0.0])
     calculation = kite.Calculation(configuration)
+
     # calculation.dos(
     #     num_points=4000,
     #     num_moments=4096,
@@ -80,16 +84,14 @@ def main(N=1, onsite=None, t=1.0, t_perp=0.0):
     #     num_disorder=1
     # )
     calculation.s_wave_clean(
-        num_random=num_random,
-        beta=beta,
-        chemical_potential=mu,
-        u=U,
-        gamma=np.zeros(2),
-        delta=delta_initial,
-        num_iterations=8,
-    )
+            num_random=64,
+            num_iterations=8,
+        )
     output_file = f"Data/monolayer_twist_Id{id:03d}.h5"
-    kite.config_system(lattice, configuration, calculation, filename=output_file)
+    kite.config_system(
+        lattice, configuration, calculation,
+        pairing=pairing, bdg=bdg, filename=output_file,
+    )
     return output_file
 
 if __name__ == "__main__":

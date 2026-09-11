@@ -116,7 +116,7 @@ void Simulation<T, D>::p_wave_clean(
   requires Complex<T>
 {
   debug_message("Entered PWaveClean\n");
-  value_type energy_scale;
+  const value_type energy_scale = h.bdg.energy_scale;
   Coordinates<std::size_t, D + 1> local(r.Ld);
   const Eigen::Array<value_type, -1, 1> coefs =
     Coefficients::build_fermi_sqrt<value_type>(h.bdg.beta, 0.0);
@@ -134,7 +134,10 @@ void Simulation<T, D>::p_wave_clean(
   sum_delta = sum_delta_init_;
   weight_sum = weight_sum_init_;
   weight_avg = weight_avg_init_;
-  mean_delta = sum_delta / weight_sum;
+  if (weight_sum > 0)
+    mean_delta = sum_delta / weight_sum;
+  else
+    mean_delta = h.pr.Delta0;
   h.pr.broadcast(mean_delta, h.bdg.nn_delta);
 #pragma omp master
   {

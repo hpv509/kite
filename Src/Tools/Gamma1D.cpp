@@ -44,9 +44,6 @@ void Simulation<T, D>::Gamma1D(
   Eigen::Array<T, -1, -1> gamma = Eigen::Array<T, -1, -1>::Zero(1, N_moments);
   Eigen::Matrix<T, 1, 2> tmp = Eigen::Matrix<T, 1, 2>::Zero();
 
-  const value_type mu = -0.25 / 4.6;
-  h.bdg.set_chemical_potential(mu);
-
   long average = 0;
   for (int disorder = 0; disorder < NDisorder; disorder++) {
     h.generate_disorder();
