@@ -49,10 +49,9 @@ void Simulation<T, D>::calc_swave_clean()
 #pragma omp barrier
     int randoms, num_itr, prv_itr;
     value_type weight_r, weight_alpha;
-    Eigen::Array<T, -1, 1> sum_delta_init(r.Orb);
-    sum_delta_init.setZero();
-    value_type weight_sum_init = 0.0;
-    value_type weight_avg_init = 1.0;
+    Eigen::Array<T, -1, 1> delta_init(r.Orb);
+    delta_init.setZero();
+    value_type u_init = 0.0;
 #pragma omp critical
     {
       H5::H5File file(name, H5F_ACC_RDONLY);
@@ -70,24 +69,22 @@ void Simulation<T, D>::calc_swave_clean()
       if (prv_itr > 0) {
         try {
           H5::Exception::dontPrint();
-          Eigen::Array<value_type, -1, -1> sum_delta_ri(2, r.Orb);
-          path = base_grp + "SumDelta";
-          get_hdf5<value_type>(sum_delta_ri.data(), &file, path);
-          Eigen::Array<value_type, -1, -1> weights(2, 1);
-          path = base_grp + "Weights";
-          get_hdf5<value_type>(weights.data(), &file, path);
+          Eigen::Array<value_type, -1, -1> delta_ri(2, r.Orb);
+          path = base_grp + "Delta";
+          get_hdf5<value_type>(delta_ri.data(), &file, path);
+          value_type damping;
+          path = base_grp + "Damping";
+          get_hdf5<value_type>(&damping, &file, path);
           for (unsigned io = 0; io < r.Orb; ++io)
-            sum_delta_init(io) = T(sum_delta_ri(0, io), sum_delta_ri(1, io));
-          weight_sum_init = weights(0, 0);
-          weight_avg_init = weights(1, 0);
+            delta_init(io) = T(delta_ri(0, io), delta_ri(1, io));
+          u_init = damping;
         } catch (H5::Exception &e) {
         }
       }
       file.close();
     }
     s_wave_clean(
-      randoms, num_itr, prv_itr, weight_r, weight_alpha, weight_sum_init,
-      weight_avg_init, sum_delta_init
+      randoms, num_itr, prv_itr, weight_r, weight_alpha, u_init, delta_init
     );
   }
 }
@@ -99,9 +96,8 @@ void Simulation<T, D>::s_wave_clean(
   const int prv_itr_,
   const value_type weight_r_,
   const value_type weight_alpha_,
-  const value_type weight_sum_init_,
-  const value_type weight_avg_init_,
-  const Eigen::Array<T, -1, 1> &sum_delta_init_
+  const value_type u_init_,
+  const Eigen::Array<T, -1, 1> &delta_init_
 )
   requires Complex<T>
 {
@@ -114,21 +110,16 @@ void Simulation<T, D>::s_wave_clean(
     Coefficients::build_fermi_sqrt<value_type>(h.bdg.beta, 0.0);
 
   Eigen::Array<T, -1, 1> mean_delta(r.Orb);
-  Eigen::Array<T, -1, 1> sum_delta(r.Orb);
+  Eigen::Array<T, -1, 1> map_delta_orb(r.Orb);
   Eigen::Array<T, -1, 1> local_delta(r.Orb);
   Eigen::Array<T, -1, 1> per_orb(r.Orb);
 
-  value_type weight_sum = weight_sum_init_;
-  value_type weight_avg = weight_avg_init_;
-  sum_delta = sum_delta_init_;
-
-  if (weight_sum > 0)
-    mean_delta = sum_delta / weight_sum;
+  value_type u_weight = u_init_;
+  if (u_init_ >= 1.0)
+    mean_delta = delta_init_;
   else
     mean_delta = h.pr.SDelta0;
-
   h.pr.broadcast_s(mean_delta, h.bdg.s_delta);
-
 #pragma omp master
   {
     Global.orb_sum.resize(r.Orb);
@@ -177,7 +168,6 @@ void Simulation<T, D>::s_wave_clean(
       const value_type weight = 1.0 / (vec + 1);
       local_delta += weight * (per_orb - local_delta);
     }
-
 #pragma omp barrier
 #pragma omp master
     Global.orb_sum.setZero();
@@ -189,12 +179,12 @@ void Simulation<T, D>::s_wave_clean(
     }
 #pragma omp barrier
     for (unsigned io = 0; io < r.Orb; ++io)
-      mean_delta(io) = Global.orb_sum(io) / n_cells;
+      map_delta_orb(io) = Global.orb_sum(io) / n_cells;
 
-    weight_avg *= 1.0 + weight_r_ / std::pow(itr, weight_alpha_);
-    weight_sum += weight_avg;
-    sum_delta += weight_avg * mean_delta;
-    mean_delta = sum_delta / weight_sum;
+    const value_type u_tmp = 1.0 + weight_r_ * std::pow(itr, -weight_alpha_);
+    u_weight = 1.0 + u_weight / u_tmp;
+    const value_type gamma_n = 1.0 / u_weight;
+    mean_delta += gamma_n * (map_delta_orb - mean_delta);
     h.pr.broadcast_s(mean_delta, h.bdg.s_delta);
 
 #pragma omp barrier
@@ -203,15 +193,14 @@ void Simulation<T, D>::s_wave_clean(
       Global.s_delta_hist(itr - prv_itr_, io) = mean_delta(io) * energy_scale;
 #pragma omp barrier
   }
-  store_s_wave_clean(prv_itr_ + num_itr_, sum_delta, weight_sum, weight_avg);
+  store_s_wave_clean(prv_itr_ + num_itr_, mean_delta, u_weight);
 }
 
 template <typename T, unsigned D>
 void Simulation<T, D>::store_s_wave_clean(
   const unsigned total_steps_,
-  const Eigen::Array<T, -1, 1> &sum_delta_,
-  const value_type weight_sum_,
-  const value_type weight_avg_
+  const Eigen::Array<T, -1, 1> &mean_delta_,
+  const value_type u_weight_
 )
   requires Complex<T>
 {
@@ -230,19 +219,18 @@ void Simulation<T, D>::store_s_wave_clean(
     ng = base_grp + "TotalSteps";
     write_hdf5(total_steps, &file, ng);
 
-    Eigen::Array<value_type, -1, -1> sum_delta_ri(2, r.Orb);
+    Eigen::Array<value_type, -1, -1> delta_ri(2, r.Orb);
     for (unsigned io = 0; io < r.Orb; ++io) {
-      sum_delta_ri(0, io) = sum_delta_(io).real();
-      sum_delta_ri(1, io) = sum_delta_(io).imag();
+      delta_ri(0, io) = mean_delta_(io).real();
+      delta_ri(1, io) = mean_delta_(io).imag();
     }
-    ng = base_grp + "SumDelta";
-    write_hdf5(sum_delta_ri, &file, ng);
+    ng = base_grp + "Delta";
+    write_hdf5(delta_ri, &file, ng);
 
-    Eigen::Array<value_type, -1, -1> weights(2, 1);
-    weights(0, 0) = weight_sum_;
-    weights(1, 0) = weight_avg_;
-    ng = base_grp + "Weights";
-    write_hdf5(weights, &file, ng);
+    Eigen::Array<value_type, -1, -1> damping(1, 1);
+    damping(0, 0) = u_weight_;
+    ng = base_grp + "Damping";
+    write_hdf5(damping, &file, ng);
   }
 #pragma omp barrier
   debug_message("Left store_s_wave_clean\n");

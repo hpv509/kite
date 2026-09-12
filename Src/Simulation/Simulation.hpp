@@ -293,10 +293,14 @@ public:
   s_wave(const int, const int, const int, const value_type, const value_type, const value_type, const value_type, const value_type, const Eigen::Array<value_type, -1, 1> &, const Eigen::Array<value_type, -1, 1> &)
     requires Complex<T>;
   void
-  s_wave_clean(const int, const int, const int, const value_type, const value_type, const value_type, const value_type, const Eigen::Array<T, -1, 1> &)
+  s_wave_clean(const int, const int, const int, const value_type, const value_type, const value_type, const Eigen::Array<T, -1, 1> &)
     requires Complex<T>;
 
-  void store_s_wave_clean(const unsigned)
+  void store_s_wave_clean(
+    const unsigned,
+    const Eigen::Array<T, -1, 1> &mean_delta,
+    const value_type u_weight
+  )
     requires Complex<T>;
 
   void store_s_wave(const value_type, const value_type, const unsigned)

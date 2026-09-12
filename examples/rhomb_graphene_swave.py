@@ -10,7 +10,7 @@ import numpy as np
 
 t = 1.0
 U = -2.0
-mu = 0.0
+mu = 0.25
 beta = 32.0
 delta_initial = [0.042, 0.042]
 
@@ -83,9 +83,14 @@ def main(N=1, onsite=None, t=1.0, t_perp=0.0):
     #     num_random=64,
     #     num_disorder=1
     # )
+    num_iterations = 64
+    prev_iterations = 0
     calculation.s_wave_clean(
-            num_random=64,
-            num_iterations=8,
+            num_random=16,
+            num_iterations=num_iterations,
+            prev_iterations=prev_iterations,
+            anchor_1=(20, 0.9),
+            anchor_2=(200, 0.6),
         )
     output_file = f"Data/monolayer_twist_Id{id:03d}.h5"
     kite.config_system(
