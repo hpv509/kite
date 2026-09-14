@@ -17,6 +17,17 @@ class KPM_Vector;
 #include "Loop.hpp"
 #include "Coefficients.hpp"
 
+template <typename T>
+T sig_weight_ratio(const T n, const T N0, const T tau)
+{
+  if (std::isinf(N0))
+    return std::exp(T(1.0) / tau);
+  auto softplus = [](const T z) {
+    return std::max(z, T(0.0)) + std::log1p(std::exp(-std::abs(z)));
+  };
+  return std::exp(softplus((N0 - n + T(1.0)) / tau) - softplus((N0 - n) / tau));
+}
+
 template <typename T, unsigned D>
 void Simulation<T, D>::calc_swave_clean()
   requires Complex<T>
@@ -48,12 +59,11 @@ void Simulation<T, D>::calc_swave_clean()
     std::cout << "Calculating SWave.\n";
 #pragma omp barrier
     int randoms, num_itr, prv_itr;
-    value_type weight_r, weight_alpha;
-    Eigen::Array<T, -1, 1> delta_init(r.Orb);
-    delta_init.setZero();
+    value_type N0, tau;
     value_type u_init = 0.0;
 #pragma omp critical
     {
+      H5::Exception::dontPrint();
       H5::H5File file(name, H5F_ACC_RDONLY);
       std::string path = base_grp + "NumRandoms";
       get_hdf5<int>(&randoms, &file, path);
@@ -61,31 +71,18 @@ void Simulation<T, D>::calc_swave_clean()
       get_hdf5<int>(&num_itr, &file, path);
       path = base_grp + "PrevIterations";
       get_hdf5<int>(&prv_itr, &file, path);
-      path = base_grp + "Wr";
-      get_hdf5<value_type>(&weight_r, &file, path);
-      path = base_grp + "Walpha";
-      get_hdf5<value_type>(&weight_alpha, &file, path);
-
-      if (prv_itr > 0) {
-        try {
-          H5::Exception::dontPrint();
-          Eigen::Array<value_type, -1, -1> delta_ri(2, r.Orb);
-          path = base_grp + "Delta";
-          get_hdf5<value_type>(delta_ri.data(), &file, path);
-          value_type damping;
-          path = base_grp + "Damping";
-          get_hdf5<value_type>(&damping, &file, path);
-          for (unsigned io = 0; io < r.Orb; ++io)
-            delta_init(io) = T(delta_ri(0, io), delta_ri(1, io));
-          u_init = damping;
-        } catch (H5::Exception &e) {
-        }
+      path = base_grp + "N0";
+      get_hdf5<value_type>(&N0, &file, path);
+      path = base_grp + "Tau";
+      get_hdf5<value_type>(&tau, &file, path);
+      path = base_grp + "InitDamping";
+      try {
+        get_hdf5<value_type>(&u_init, &file, path);
+      } catch (H5::Exception &e) {
       }
       file.close();
     }
-    s_wave_clean(
-      randoms, num_itr, prv_itr, weight_r, weight_alpha, u_init, delta_init
-    );
+    s_wave_clean(randoms, num_itr, prv_itr, N0, tau, u_init);
   }
 }
 
@@ -94,10 +91,9 @@ void Simulation<T, D>::s_wave_clean(
   const int randoms_,
   const int num_itr_,
   const int prv_itr_,
-  const value_type weight_r_,
-  const value_type weight_alpha_,
-  const value_type u_init_,
-  const Eigen::Array<T, -1, 1> &delta_init_
+  const value_type N0_,
+  const value_type tau_,
+  const value_type u_init_
 )
   requires Complex<T>
 {
@@ -115,10 +111,7 @@ void Simulation<T, D>::s_wave_clean(
   Eigen::Array<T, -1, 1> per_orb(r.Orb);
 
   value_type u_weight = u_init_;
-  if (u_init_ >= 1.0)
-    mean_delta = delta_init_;
-  else
-    mean_delta = h.pr.SDelta0;
+  mean_delta = h.pr.SDelta0;
   h.pr.broadcast_s(mean_delta, h.bdg.s_delta);
 #pragma omp master
   {
@@ -129,7 +122,6 @@ void Simulation<T, D>::s_wave_clean(
       Global.s_delta_hist(0, io) = mean_delta(io) * energy_scale;
   }
 #pragma omp barrier
-
   h.generate_disorder();
   KPM_Vector<T, D> phi(2, *this);
   Eigen::Array<T, -1, 1> ket(2 * r.Sized);
@@ -181,12 +173,10 @@ void Simulation<T, D>::s_wave_clean(
     for (unsigned io = 0; io < r.Orb; ++io)
       map_delta_orb(io) = Global.orb_sum(io) / n_cells;
 
-    const value_type u_tmp = 1.0 + weight_r_ * std::pow(itr, -weight_alpha_);
-    u_weight = 1.0 + u_weight / u_tmp;
+    u_weight = 1.0 + u_weight / sig_weight_ratio<value_type>(itr, N0_, tau_);
     const value_type gamma_n = 1.0 / u_weight;
     mean_delta += gamma_n * (map_delta_orb - mean_delta);
     h.pr.broadcast_s(mean_delta, h.bdg.s_delta);
-
 #pragma omp barrier
 #pragma omp master
     for (unsigned io = 0; io < r.Orb; ++io)

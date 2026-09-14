@@ -10,13 +10,14 @@ import numpy as np
 
 t = 1.0
 U = -2.0
-mu = 0.25
-beta = 32.0
-delta_initial = [0.042, 0.042]
+beta = 64.0
+delta_initial = [0.4, 0.4, 0.042, 0.042, 0.25, 0.25]
 
 id = int(sys.argv[1])
+ud = float(sys.argv[2])
+mu = float(sys.argv[3])
 
-def graphene_lattice(N=1, onsite=None, t=1.0, t_perp=0.0):
+def graphene_lattice(N=3, onsite=None, t=1.0, t_perp=0.5):
     a = 0.24595  # [nm] unit cell length
     a_cc = 0.142  # [nm] carbon-carbon distance
     c0 = 0.335  # [nm] interlayer spacing
@@ -25,8 +26,7 @@ def graphene_lattice(N=1, onsite=None, t=1.0, t_perp=0.0):
     a2 = a * np.array([1 / 2, 1 / 2 * np.sqrt(3)])
 
     lat = latt.Lattice(a1=a1, a2=a2)
-    # onsite = [-1.0 * t, 0.0 * t, -0.2 * t]
-    onsite = [0.0 * t]
+    onsite = [-ud * t, 0.0 * t, ud * t]
 
     v0 = np.array([0.0, a_cc])
 
@@ -52,29 +52,32 @@ def graphene_lattice(N=1, onsite=None, t=1.0, t_perp=0.0):
     return lat
 
 
-def main(N=1, onsite=None, t=1.0, t_perp=0.0):
+def main(N=3, onsite=None, t=1.0, t_perp=0.5):
     lattice = graphene_lattice(N, onsite, t, t_perp)
 
     nx = ny = 2
     lx = 256
     ly = 256
     mode = "random"
-    range = 4.6
+    # bound = 4.6
+    bound = np.sqrt(3 + t_perp + u_d + np.abs(mu) ** 2 )
     configuration = kite.Configuration(
         divisions=[nx, ny],
         length=[lx, ly],
         boundaries=[mode, mode],
         is_complex=True,
         precision=1,
-        spectrum_range=[-range, range],
+        spectrum_range=[-bound, bound],
         seed_h=id,
         seed_v=id,
     )
     pairing = kite.Pairing(lattice, hubbard=U)
-    pairing.add_onsite_pairing("A1", delta=delta_initial[0])
-    pairing.add_onsite_pairing("B1", delta=delta_initial[1])
+    for l in range(N):
+        A, B = f"A{l + 1}", f"B{l + 1}"
+        pairing.add_onsite_pairing(A, delta=delta_initial[2 * l])
+        pairing.add_onsite_pairing(B, delta=delta_initial[2 * l + 1])
 
-    bdg = kite.BdG(chemical_potential=mu, beta=beta, hartree=[0.0, 0.0])
+    bdg = kite.BdG(chemical_potential=mu, beta=beta, hartree=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
     calculation = kite.Calculation(configuration)
 
     # calculation.dos(
@@ -83,16 +86,16 @@ def main(N=1, onsite=None, t=1.0, t_perp=0.0):
     #     num_random=64,
     #     num_disorder=1
     # )
-    num_iterations = 64
+    num_iterations = 512
     prev_iterations = 0
     calculation.s_wave_clean(
-            num_random=16,
+            num_random=8,
             num_iterations=num_iterations,
             prev_iterations=prev_iterations,
             anchor_1=(20, 0.9),
             anchor_2=(200, 0.6),
         )
-    output_file = f"Data/monolayer_twist_Id{id:03d}.h5"
+    output_file = f"Data/trilayer_twist_Id{id:03d}_Ud{ud:.2f}_Fermi{mu:.2f}.h5"
     kite.config_system(
         lattice, configuration, calculation,
         pairing=pairing, bdg=bdg, filename=output_file,
@@ -100,5 +103,5 @@ def main(N=1, onsite=None, t=1.0, t_perp=0.0):
     return output_file
 
 if __name__ == "__main__":
-    output = main(N=1, t_perp=0.0)
+    output = main(N=3, t_perp=0.5)
     print(output, file=sys.stderr)
