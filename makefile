@@ -20,7 +20,7 @@ CPPFLAGS := $(EIGEN_INC) \
 	-ISrc/Vector \
 	-ISrc/Simulation \
 	-DCOMPILE_WAVEPACKET=0 \
-	-DPAIRING=2 \
+	-DPAIRING=1 \
 	$(HDF5_FLAGS)
 
 CXXFLAGS := -std=c++20 -O3 -fopenmp

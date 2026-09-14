@@ -10,5 +10,6 @@ module load Python/3.12.3-GCCcore-13.3.0
 module load FFTW/3.3.10-GCC-13.3.0
 module load GCC/13.3.0
 
-output=$(python ../examples/rhomb_graphene_swave.py "$id" 2>&1 >/dev/null)
+
+output=$(python ../examples/rhomb_graphene_swave.py "$id" "$ud" "$mu" 2>&1 >/dev/null)
 OMP_NUM_THREADS="$ths" ./../build/KITEx "$output"
