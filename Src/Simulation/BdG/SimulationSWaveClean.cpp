@@ -125,7 +125,6 @@ void Simulation<T, D>::s_wave_clean(
   h.generate_disorder();
   KPM_Vector<T, D> phi(2, *this);
   Eigen::Array<T, -1, 1> ket(2 * r.Sized);
-  Eigen::Array<T, -1, 1> bra(2 * r.Sized);
 
   for (unsigned itr = prv_itr_ + 1; itr <= prv_itr_ + num_itr_; ++itr) {
     local_delta.setZero();
@@ -135,14 +134,6 @@ void Simulation<T, D>::s_wave_clean(
       phi.set_index(0);
       phi.initiate_vector();
       phi.v.col(0) *= std::sqrt(size);
-      phi.empty_ghosts(0);
-      bra = phi.v.col(0);
-
-      phi.v.setZero();
-      phi.set_index(0);
-      phi.v.col(0) = bra.matrix();
-      phi.template pairing<-1>(1.0, phi.v.col(0));
-
       ket.setZero();
       phi.Exchange_Boundaries();
       for (unsigned n = 0, N = coefs.size(); n < N; ++n) {
@@ -150,10 +141,8 @@ void Simulation<T, D>::s_wave_clean(
         ket += coefs(n) * phi.v.col(phi.get_index()).array();
       }
       phi.template pairing<1>(1.0, ket);
-
       const Eigen::Array<value_type, -1, 1> upsilon =
-        (bra.conjugate() * ket).abs2().head(r.Sized) -
-        (bra.conjugate() * ket).abs2().tail(r.Sized);
+        ket.abs2().head(r.Sized) - ket.abs2().tail(r.Sized);
       const Eigen::Array<T, -1, 1> map_delta = 0.5 * h.pr.U * upsilon;
 
       h.pr.orbital_sum(map_delta, per_orb);
