@@ -289,11 +289,23 @@ public:
     requires Real<T>
   {};
 
-  void
-  s_wave(const int, const int, const int, const value_type, const value_type, const value_type, const value_type, const value_type, const Eigen::Array<value_type, -1, 1> &, const Eigen::Array<value_type, -1, 1> &)
+  void s_wave(
+    const int,
+    const int,
+    const int,
+    const value_type,
+    const value_type,
+    const value_type
+  )
     requires Complex<T>;
-  void
-  s_wave_clean(const int, const int, const int, const value_type, const value_type, const value_type)
+  void s_wave_clean(
+    const int,
+    const int,
+    const int,
+    const value_type,
+    const value_type,
+    const value_type
+  )
     requires Complex<T>;
 
   void store_s_wave_clean(
