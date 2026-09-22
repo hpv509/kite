@@ -18,15 +18,13 @@ PairingStructure<T, D>::PairingStructure(char *name, LatticeStructure<D> &rr) :
 
   const std::string base_dir = "/Pairing/";
   std::string tmp;
-
 #pragma omp critical
   {
     H5::H5File file(name, H5F_ACC_RDONLY);
     H5::Exception::dontPrint();
     tmp = "/EnergyScale";
     get_hdf5<value_type>(&energy_scale, &file, tmp);
-
-    try { // on-site channel
+    try {
       tmp = base_dir + "U";
       get_hdf5<value_type>(&U, &file, tmp);
       tmp = base_dir + "SDelta0";
@@ -37,7 +35,7 @@ PairingStructure<T, D>::PairingStructure(char *name, LatticeStructure<D> &rr) :
       SDelta0.setZero();
       has_onsite = false;
     }
-    try { // bond channel
+    try {
       tmp = base_dir + "NPairings";
       get_hdf5<unsigned>(NPairings.data(), &file, tmp);
       has_bonds = (NPairings.sum() > 0);
@@ -79,15 +77,13 @@ PairingStructure<T, D>::PairingStructure(char *name, LatticeStructure<D> &rr) :
   Delta0 = Eigen::Array<T, -1, -1>::Zero(max_bonds, orb);
   SDelta0 = Eigen::Array<T, -1, 1>::Zero(orb);
 
-  Eigen::Array<double, -1, -1> v_buffer(max_bonds, orb);
-
 #pragma omp critical
   {
     H5::H5File file(name, H5F_ACC_RDONLY);
+    H5::Exception::dontPrint();
     tmp = "/EnergyScale";
     get_hdf5<value_type>(&energy_scale, &file, tmp);
     try {
-      H5::Exception::dontPrint();
       tmp = base_dir + "d";
       get_hdf5<int>(dist.data(), &file, tmp);
       tmp = base_dir + "ReverseOrbital";
@@ -99,10 +95,11 @@ PairingStructure<T, D>::PairingStructure(char *name, LatticeStructure<D> &rr) :
       tmp = base_dir + "V";
       get_hdf5<value_type>(&V, &file, tmp);
     } catch (H5::Exception &e) {
-      V = 0;
+      std::cerr << "PairingStructure: incomplete bond table, cannot read "
+                << tmp << "\n";
+      exit(1);
     }
     try {
-      H5::Exception::dontPrint();
       tmp = base_dir + "U";
       get_hdf5<value_type>(&U, &file, tmp);
       tmp = base_dir + "SDelta0";
@@ -113,7 +110,6 @@ PairingStructure<T, D>::PairingStructure(char *name, LatticeStructure<D> &rr) :
     }
     file.close();
   }
-  // Converting the distances from basis-3 to local domain
   dist_tile.resize(max_bonds, orb);
   dist_tile.setZero();
   target_orb.resize(max_bonds, orb);
@@ -132,14 +128,13 @@ PairingStructure<T, D>::PairingStructure(char *name, LatticeStructure<D> &rr) :
 
       std::ptrdiff_t s = 0;
       for (unsigned k = 0; k < D; ++k) {
-        const std::ptrdiff_t dr = b3.coord[k] - 1; // in {-1, 0, +1}
+        const std::ptrdiff_t dr = b3.coord[k] - 1;
         shift(k * max_bonds + b, io) = dr;
         s += dr * xd.basis[k];
       }
       s += (jo - static_cast<std::ptrdiff_t>(io)) * xd.basis[D];
       dist_tile(b, io) = s;
     }
-  // Check Reverse Map
   for (unsigned io = 0; io < orb; ++io)
     for (unsigned b = 0, B = NPairings(io); b < B; ++b) {
       const int jo = rev_orb(b, io);
@@ -287,6 +282,23 @@ void PairingStructure<T, D>::symmetrize_bonds(
 }
 
 template <typename T, unsigned D>
+void PairingStructure<T, D>::average_bonds(Eigen::Array<T, -1, -1> &bond_values
+) const
+{
+  if (!has_bonds)
+    return;
+  for (unsigned io = 0; io < orb; ++io) {
+    T mean = 0;
+    const unsigned B = NPairings(io);
+    for (unsigned b = 0; b < B; ++b)
+      mean += bond_values(b, io);
+    mean /= value_type(B);
+    for (unsigned b = 0; b < B; ++b)
+      bond_values(b, io) = mean;
+  }
+}
+
+template <typename T, unsigned D>
 void PairingStructure<T, D>::broadcast(
   const Eigen::Array<T, -1, -1> &bond_values_,
   Eigen::Array<T, -1, -1> &field_
@@ -327,8 +339,7 @@ void PairingStructure<T, D>::allocate(Eigen::Array<T, -1, -1> &field) const
   broadcast(Delta0, field);
 }
 
-template <typename T, unsigned D>
-void PairingStructure<T, D>::print() const
+template <typename T, unsigned D> void PairingStructure<T, D>::print() const
 {
 #pragma omp master
   {

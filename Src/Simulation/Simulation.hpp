@@ -303,9 +303,9 @@ public:
   )
     requires Complex<T>;
 
-  void store_s_wave(const value_type, const value_type, const unsigned)
+  void store_s_wave(const unsigned, const value_type)
     requires Complex<T>;
-  void store_s_wave(const value_type, const value_type, const unsigned)
+  void store_s_wave(const unsigned, const value_type)
     requires Real<T>;
   void store_s_wave_clean(
     const unsigned,
@@ -352,13 +352,44 @@ public:
   void calc_pwave_clean()
     requires Real<T>
   {};
-  void
-  p_wave_clean(const int, const int, const int, const value_type, const value_type, const value_type, const value_type, const Eigen::Array<T, -1, -1> &)
+  void p_wave_clean(
+    const int,
+    const int,
+    const int,
+    const value_type,
+    const value_type,
+    const value_type,
+    const bool
+  )
     requires Complex<T>;
   void store_p_wave_clean(
     const unsigned,
     const Eigen::Array<T, -1, -1> &,
+    const value_type
+  )
+    requires Complex<T>;
+
+  void calc_spwave_clean()
+    requires Complex<T>;
+  void calc_spwave_clean()
+    requires Real<T>
+  {};
+
+  void sp_wave_clean(
+    const int,
+    const int,
+    const int,
     const value_type,
+    const value_type,
+    const value_type,
+    const bool
+  )
+    requires Complex<T>;
+
+  void store_sp_wave_clean(
+    const unsigned,
+    const Eigen::Array<T, -1, 1> &,
+    const Eigen::Array<T, -1, -1> &,
     const value_type
   )
     requires Complex<T>;

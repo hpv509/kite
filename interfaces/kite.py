@@ -570,6 +570,7 @@ class Pairing:
 
         return {
             'NPairings': num_pairings,
+            'SDelta0': s_delta0,
             'd': d_pair,
             'Delta0': delta0,
             'Rep': rep,
@@ -834,6 +835,11 @@ class Calculation:
         return self._p_wave_c
 
     @property
+    def get_sp_wave_c(self):
+        """Returns the requested joint s-wave + bond calculation."""
+        return self._sp_wave_c
+
+    @property
     def get_dos(self):
         """Returns the requested DOS functions."""
         return self._dos
@@ -937,6 +943,7 @@ class Calculation:
         self._s_wave_c                       = []
         self._p_wave                         = []
         self._p_wave_c                       = []
+        self._sp_wave_c                      = []
         self._dos                            = []
         self._ldos                           = []
         self._ldos_map                       = []
@@ -965,65 +972,22 @@ class Calculation:
                                 'zzx': 24, 'zzy': 25, 'zzz': 26}
         self._avail_dir_sngl = {'xx': 0, 'yy': 1, 'zz': 2}
 
-    def s_wave(
-        self,
-        num_random,
-        beta,
-        chemical_potential,
-        u,
-        gamma,
-        delta,
-        num_iterations,
-        N0,
-        tau,
-        prev_iterations=0,
-    ):
-        """Self-consistent onsite s-wave BdG calculation.
-
-        Parameters
-        ----------
-        num_random : int
-            Number of random vectors.
-        beta : float
-            Inverse of temperature.
-        chemical_potential : float
-            Chemical potential.
-        u : float
-            Onsite interactions strength.
-        gamma : float
-            Hartree density.
-        delta : float
-            Pairing term.
-        num_iterations : int
-            Number of self-consistency iterations to run.
-        N0, tau : float
-            Smooth logistic weight parameters, validated by
-            `sigmoid_weight_schedule`.
-        prev_iterations : int
-            Iterations already completed in a previous run. The mixing
-            state this implies is recomputed here from (N0, tau,
-            prev_iterations) via `sigmoid_u_init`, so nothing needs to be
-            read back from a previous run's output.
-        """
+    def s_wave(self, num_random, num_iterations, N0, tau,
+               prev_iterations=0, init_map=None):
         N0, tau = sigmoid_weight_schedule(
             N0, tau, total_iterations=num_iterations + prev_iterations
         )
         u_init = sigmoid_u_init(prev_iterations, N0, tau)
-        self._s_wave.append(
-            {
-                "num_random": num_random,
-                "num_iterations": num_iterations,
-                "prev_iterations": prev_iterations,
-                "beta": beta,
-                "chemical_potential": chemical_potential,
-                "u": u,
-                "gamma": gamma,
-                "delta": delta,
-                "N0": N0,
-                "tau": tau,
-                "u_init": u_init,
-            }
-        )
+        self._s_wave.append({
+            "num_random": num_random,
+            "num_iterations": num_iterations,
+            "prev_iterations": prev_iterations,
+            "N0": N0,
+            "tau": tau,
+            "u_init": u_init,
+            "init_map": None if init_map is None
+                        else np.asarray(init_map, dtype=np.float64).ravel(),
+        })
 
     def s_wave_clean(self, num_random, num_iterations, N0, tau,
                      prev_iterations=0):
@@ -1128,6 +1092,31 @@ class Calculation:
                 "N0": N0,
                 "tau": tau,
                 "u_init": u_init,
+            }
+        )
+
+    def sp_wave_clean(
+        self,
+        num_random,
+        num_iterations,
+        N0,
+        tau,
+        prev_iterations=0,
+        average_bonds=False,
+    ):
+        N0, tau = sigmoid_weight_schedule(
+            N0, tau, total_iterations=num_iterations + prev_iterations
+        )
+        u_init = sigmoid_u_init(prev_iterations, N0, tau)
+        self._sp_wave_c.append(
+            {
+                "num_random": num_random,
+                "num_iterations": num_iterations,
+                "prev_iterations": prev_iterations,
+                "N0": N0,
+                "tau": tau,
+                "u_init": u_init,
+                "average_bonds": bool(average_bonds),
             }
         )
 
@@ -1808,6 +1797,23 @@ def config_system(lattice, config, calculation, modification=None, **kwargs):
         config._is_complex = 1
         config.set_type()
 
+
+    if (calculation.get_s_wave or calculation.get_s_wave_c) and kwargs.get('pairing', None) is None:
+        raise SystemExit(
+            'An s-wave calculation was requested but no pairing channel '
+            'was supplied. Build a kite.Pairing(lattice, hubbard=U) and pass it '
+            'as config_system(..., pairing=pairing).')
+    if (calculation.get_s_wave or calculation.get_s_wave_c or calculation.get_p_wave_c) \
+            and kwargs.get('bdg', None) is None:
+        raise SystemExit(
+            'A self-consistent BdG calculation was requested but no kite.BdG '
+            'object was supplied. Chemical potential and beta now live there.')
+    if calculation.get_s_wave and calculation.get_s_wave_c:
+        raise SystemExit(
+            'Request s_wave or s_wave_clean, not both: they share h.bdg.s_delta '
+            'and the random-vector stream, so running them from one file does not '
+            'compare like with like. Write two files with identical seeds.')
+
     if kwargs.get('pairing', None) is not None and complx == 0:
         print('A pairing channel was supplied, but is_complex is 0. Automatically turning is_complex to 1!')
         config._is_complex = 1
@@ -2279,14 +2285,11 @@ def config_system(lattice, config, calculation, modification=None, **kwargs):
         grpc_p.create_dataset('NumRandoms', data=single_s_wave['num_random'], dtype=np.int32)
         grpc_p.create_dataset('NumIterations', data=single_s_wave['num_iterations'], dtype=np.int32)
         grpc_p.create_dataset('PrevIterations', data=single_s_wave['prev_iterations'], dtype=np.int32)
-        grpc_p.create_dataset('Beta', data=single_s_wave['beta'], dtype=np.float64)
-        grpc_p.create_dataset('ChemicalPotential', data=single_s_wave['chemical_potential'], dtype=np.float64)
-        grpc_p.create_dataset('U', data=single_s_wave['u'], dtype=np.float64)
-        grpc_p.create_dataset('Gamma', data=np.asarray(single_s_wave['gamma']), dtype=np.float64)
-        grpc_p.create_dataset('Delta', data=np.asarray(single_s_wave['delta']), dtype=np.float64)
         grpc_p.create_dataset('N0', data=single_s_wave['N0'], dtype=np.float64)
         grpc_p.create_dataset('Tau', data=single_s_wave['tau'], dtype=np.float64)
         grpc_p.create_dataset('InitDamping', data=single_s_wave['u_init'], dtype=np.float64)
+        if single_s_wave['init_map'] is not None:
+            grpc_p.create_dataset('InitMap', data=single_s_wave['init_map'], dtype=np.float64)
 
     if calculation.get_s_wave_c:
         if len(calculation.get_s_wave_c) > 1:
@@ -2329,6 +2332,21 @@ def config_system(lattice, config, calculation, modification=None, **kwargs):
         grpc_p.create_dataset('N0', data=single_p_wave['N0'], dtype=np.float64)
         grpc_p.create_dataset('Tau', data=single_p_wave['tau'], dtype=np.float64)
         grpc_p.create_dataset('InitDamping', data=single_p_wave['u_init'], dtype=np.float64)
+
+    if calculation.get_sp_wave_c:
+        if len(calculation.get_sp_wave_c) > 1:
+            raise SystemExit('Only a single sp-wave calculation is currently allowed.')
+
+        single_sp_wave = calculation.get_sp_wave_c[0]
+
+        grpc_p = grpc.create_group('sp_wave_c')
+        grpc_p.create_dataset('NumRandoms', data=single_sp_wave['num_random'], dtype=np.int32)
+        grpc_p.create_dataset('NumIterations', data=single_sp_wave['num_iterations'], dtype=np.int32)
+        grpc_p.create_dataset('PrevIterations', data=single_sp_wave['prev_iterations'], dtype=np.int32)
+        grpc_p.create_dataset('N0', data=single_sp_wave['N0'], dtype=np.float64)
+        grpc_p.create_dataset('Tau', data=single_sp_wave['tau'], dtype=np.float64)
+        grpc_p.create_dataset('InitDamping', data=single_sp_wave['u_init'], dtype=np.float64)
+        grpc_p.create_dataset('AverageBonds', data=int(single_sp_wave['average_bonds']), dtype=np.int32)
 
     if calculation.get_dos:
         grpc_p = grpc.create_group('dos')

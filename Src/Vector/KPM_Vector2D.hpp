@@ -137,6 +137,20 @@ public:
 #pragma omp barrier
   }
 
+  // Boundary phase e^{i phi_ij} attached to H_{p_i, h_j} for bond (io, b)
+  // leaving the site with local coordinates (x0, x1); same factor as the kernel.
+  T bond_phase(
+    const unsigned io_,
+    const unsigned b_,
+    const std::size_t x0_,
+    const std::size_t x1_
+  ) const
+  {
+    const int s0 = h.pr.shift(0 * h.pr.max_bonds + b_, io_);
+    const int s1 = h.pr.shift(1 * h.pr.max_bonds + b_, io_);
+    return Fact_Bnd[0][s0 + 1][x0_] * Fact_Bnd[1][s1 + 1][x1_];
+  }
+
   template <int S>
   void pair_window(
     const unsigned io_,
@@ -171,13 +185,20 @@ public:
     static_assert(S == -1 || S == 1);
     // constexpr value_type norm = 1 / std::sqrt(2);
     const value_type norm = 1 / std::sqrt(2);
-    const T gd = static_cast<T>(S) * gamma_;
-    const T gc = std::conj(gd);
 
     const std::size_t jo = h.pr.target_orb(b_, io_);
     const std::ptrdiff_t s = h.pr.dist_tile(b_, io_);
 
-    const std::size_t ob = x.basis[2];
+    const T gd = static_cast<T>(S) * gamma_;
+    const int s0 = h.pr.shift(0 * h.pr.max_bonds + b_, io_);
+    const int s1 = h.pr.shift(1 * h.pr.max_bonds + b_, io_);
+    // Fact_Bnd[k][-s_k+1][j_k] == conj( Fact_Bnd[k][s_k+1][i_k] )
+    const T *const fx_p = Fact_Bnd[0][s0 + 1];
+    const T *const fy_p = Fact_Bnd[1][s1 + 1];
+    const T *const fx_h = Fact_Bnd[0][-s0 + 1];
+    const T *const fy_h = Fact_Bnd[1][-s1 + 1];
+
+    std::size_t ob = x.basis[2];
     const std::size_t io_base = io_ * ob;
     const std::size_t jo_base = jo * ob;
 
@@ -191,20 +212,25 @@ public:
     pair_window<-1>(io_, b_, p_beg, p_end);
     for (std::size_t i1 = p_beg[1]; i1 < p_end[1]; ++i1) {
       const std::size_t row = i1 * std + jo_base;
+      const T gy = fy_h[i1];
       for (std::size_t i0 = p_beg[0]; i0 < p_end[0]; ++i0) {
         const std::size_t j = row + i0;
         const std::ptrdiff_t i = static_cast<std::size_t>(j - s);
+        const T gd = value_type(S) * gamma_ * gy * fx_h[i0];
         state_.coeffRef(j + offset) =
           norm * (-gd * state_.coeff(i) + pair_buf[j - jo_base]);
       }
     }
-    // particle side: i owned, partner j = i + s read from the snapshot
+    // particle side: i owned, partner at j = i + s
     pair_window<1>(io_, b_, p_beg, p_end);
     for (std::size_t i1 = p_beg[1]; i1 < p_end[1]; ++i1) {
       const std::size_t row = i1 * std + io_base;
+      const T gy = fy_p[i1];
       for (std::size_t i0 = p_beg[0]; i0 < p_end[0]; ++i0) {
         const std::ptrdiff_t i = row + i0;
         const std::size_t jc = static_cast<std::size_t>(i + s) - jo_base;
+        const T gd = value_type(S) * gamma_ * myconj(gy * fx_p[i0]);
+        const T gc = myconj(gd);
         state_.coeffRef(i) = norm * (state_.coeff(i) + gc * pair_buf[jc]);
       }
     }

@@ -5,10 +5,8 @@
 #include "Random.hpp"
 #include "Coordinates.hpp"
 #include "LatticeStructure.hpp"
-template <typename T, unsigned D>
-class Hamiltonian;
-template <typename T, unsigned D>
-class KPM_Vector;
+template <typename T, unsigned D> class Hamiltonian;
+template <typename T, unsigned D> class KPM_Vector;
 #include "queue.hpp"
 #include "Simulation.hpp"
 #include "Hamiltonian.hpp"
@@ -16,17 +14,7 @@ class KPM_Vector;
 #include "KPM_Vector.hpp"
 #include "Loop.hpp"
 #include "Coefficients.hpp"
-
-template <typename T>
-T sig_weight_ratio(const T n, const T N0, const T tau)
-{
-  if (std::isinf(N0))
-    return std::exp(T(1.0) / tau);
-  auto softplus = [](const T z) {
-    return std::max(z, T(0.0)) + std::log1p(std::exp(-std::abs(z)));
-  };
-  return std::exp(softplus((N0 - n + T(1.0)) / tau) - softplus((N0 - n) / tau));
-}
+#include "SigWeight.hpp"
 
 template <typename T, unsigned D>
 void Simulation<T, D>::calc_swave_clean()

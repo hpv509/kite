@@ -31,7 +31,7 @@ struct GLOBAL_VARIABLES {
   Eigen::Array <T, Eigen::Dynamic, Eigen::Dynamic> avg_results;
   Eigen::Array <double,3,1> GlobBTwist; // Glob Boundary Twist Angles
   Eigen::Array<T, -1, -1> ldos_map;
-  Eigen::Array<T, -1, -1> s_wave_map;
+  Eigen::Array<T, -1, 1> s_delta_map;
   Eigen::Array<T, -1, -1> p_wave_map;
   Eigen::Array<T, -1, -1> free_energy;
   Eigen::Array<T, -1,  1> orb_sum;
@@ -68,6 +68,7 @@ struct GLOBAL_VARIABLES {
   bool calculate_st_lcm;
   bool calculate_s_wave;
   bool calculate_p_wave;
+  bool calculate_sp_wave;
 
   GLOBAL_VARIABLES();
   void addbond ( std::size_t, std::ptrdiff_t, T );

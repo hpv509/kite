@@ -608,9 +608,10 @@ void inline KPM_Vector<T, 2>::mult_pairing_bonds(
       x = 0;
       for (std::size_t i = j; i < j + TILE; i++) {
         const T f1 = Fact_Bnd[0][hop[0]][rr[0] + x];
-        const T nd = order * h.bdg.nn_delta(b, i) * phase_y * f1;
-        phi0[i] += nd * phiM1[i + d1 + offset];
-        phi0[i + offset] += myconj(nd) * phiM1[i + d1];
+        const T bp = phase_y * f1;
+        const T nd = order * h.bdg.nn_delta(b, i);
+        phi0[i] += nd * bp * phiM1[i + d1 + offset];
+        phi0[i + offset] += myconj(nd) * bp * phiM1[i + d1];
         ++x;
       }
       ++y;
