@@ -368,6 +368,31 @@ public:
     const value_type
   )
     requires Complex<T>;
+
+  void calc_spwave_clean()
+    requires Complex<T>;
+  void calc_spwave_clean()
+    requires Real<T>
+  {};
+
+  void sp_wave_clean(
+    const int,
+    const int,
+    const int,
+    const value_type,
+    const value_type,
+    const value_type,
+    const bool
+  )
+    requires Complex<T>;
+
+  void store_sp_wave_clean(
+    const unsigned,
+    const Eigen::Array<T, -1, 1> &,
+    const Eigen::Array<T, -1, -1> &,
+    const value_type
+  )
+    requires Complex<T>;
 };
 
 #endif

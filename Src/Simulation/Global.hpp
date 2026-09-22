@@ -68,6 +68,7 @@ struct GLOBAL_VARIABLES {
   bool calculate_st_lcm;
   bool calculate_s_wave;
   bool calculate_p_wave;
+  bool calculate_sp_wave;
 
   GLOBAL_VARIABLES();
   void addbond ( std::size_t, std::ptrdiff_t, T );

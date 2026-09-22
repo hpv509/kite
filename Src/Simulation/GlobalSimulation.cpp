@@ -89,6 +89,8 @@ GlobalSimulation<T, D>::GlobalSimulation(char *name) : rglobal(name)
     simul.calc_st_lcm();
     simul.calc_swave_clean();
     simul.calc_pwave_clean();
+    simul.calc_spwave_clean();
+    simul.calc_swave();
   }
   debug_message("Left global_simulation\n");
 }
