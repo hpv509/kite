@@ -570,6 +570,7 @@ class Pairing:
 
         return {
             'NPairings': num_pairings,
+            'SDelta0': s_delta0,
             'd': d_pair,
             'Delta0': delta0,
             'Rep': rep,

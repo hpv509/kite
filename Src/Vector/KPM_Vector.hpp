@@ -92,6 +92,16 @@ public:
   ) const
   {}
 
+  T bond_phase(
+    const unsigned,
+    const unsigned,
+    const std::size_t,
+    const std::size_t
+  ) const
+  {
+    return T(1);
+  }
+
   template <int S, typename Derived>
   void nn_pairing(
     const T gamma_,

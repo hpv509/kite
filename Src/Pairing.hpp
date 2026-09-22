@@ -54,6 +54,7 @@ struct PairingStructure {
   void
   broadcast(const Eigen::Array<T, -1, -1> &, Eigen::Array<T, -1, -1> &) const;
   void symmetrize_bonds(Eigen::Array<T, -1, -1> &) const;
+  void average_bonds(Eigen::Array<T, -1, -1> &) const;
   void
   symmetrize(const Eigen::Array<T, -1, -1> &, Eigen::Array<T, -1, -1> &) const;
 
