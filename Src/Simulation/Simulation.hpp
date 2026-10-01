@@ -279,88 +279,37 @@ public:
   )
     requires Complex<T>;
 
-  // S-Wave
-  void calc_swave()
+  // Bond map: equilibrium local currents (SimulationBondMap.cpp)
+  void calc_bond_map()
     requires Complex<T>;
-  void calc_swave()
+  void calc_bond_map()
     requires Real<T>
   {};
-  void calc_swave_clean()
+  void bond_map(const int, const value_type, const value_type)
     requires Complex<T>;
-  void calc_swave_clean()
+  void store_bond_map(const int)
+    requires Complex<T>;
+
+  // S-Wave; Anderson-mixed gap equation (SimulationSWaveCleanAn.cpp)
+  void calc_swave_anderson()
+    requires Complex<T>;
+  void calc_swave_anderson()
     requires Real<T>
   {};
-
-  void s_wave(
+  void s_wave_anderson(
     const int,
     const int,
     const int,
-    const value_type,
-    const value_type,
+    const int,
+    const int,
     const value_type
   )
     requires Complex<T>;
-  void s_wave_clean(
-    const int,
-    const int,
-    const int,
-    const value_type,
-    const value_type,
-    const value_type
-  )
+  void
+  store_s_wave_anderson(const unsigned, const Eigen::Array<T, -1, 1> &, const Eigen::Array<value_type, -1, 1> &, const Eigen::Array<value_type, -1, -1> &, const Eigen::Array<value_type, -1, -1> &)
     requires Complex<T>;
 
-  void store_s_wave_clean(
-    const unsigned,
-    const Eigen::Array<T, -1, 1> &mean_delta,
-    const value_type u_weight
-  )
-    requires Complex<T>;
-
-  void store_s_wave(const unsigned, const value_type)
-    requires Complex<T>;
-  void store_s_wave(const unsigned, const value_type)
-    requires Real<T>;
-  void store_s_wave_clean(
-    const unsigned,
-    const Eigen::Array<T, -1, 1> &,
-    const value_type,
-    const value_type,
-    const value_type
-  )
-    requires Complex<T>;
-  void store_s_wave_clean(
-    const unsigned,
-    const Eigen::Array<T, -1, 1> &,
-    const value_type,
-    const value_type,
-    const value_type
-  )
-    requires Real<T>
-  {};
-
-  // P-Wave; Nearest-Neighbor Spin-Singlet Pairing
-  void calc_pwave()
-    requires Complex<T>;
-  void calc_pwave()
-    requires Real<T>
-  {};
-  void p_wave(
-    const int,
-    const value_type,
-    const value_type,
-    const value_type,
-    const value_type,
-    const value_type,
-    const value_type,
-    const value_type
-  )
-    requires Complex<T>;
-  void store_p_wave(const value_type energy_scale)
-    requires Complex<T>;
-  void store_p_wave(const value_type energy_scale)
-    requires Real<T>;
-
+  // P-Wave; bond pairing gap equation (SimulationPWaveClean.cpp)
   void calc_pwave_clean()
     requires Complex<T>;
   void calc_pwave_clean()
@@ -381,51 +330,6 @@ public:
     const Eigen::Array<T, -1, -1> &,
     const value_type
   )
-    requires Complex<T>;
-
-  void calc_spwave_clean()
-    requires Complex<T>;
-  void calc_spwave_clean()
-    requires Real<T>
-  {};
-
-  void sp_wave_clean(
-    const int,
-    const int,
-    const int,
-    const value_type,
-    const value_type,
-    const value_type,
-    const bool
-  )
-    requires Complex<T>;
-
-  void store_sp_wave_clean(
-    const unsigned,
-    const Eigen::Array<T, -1, 1> &,
-    const Eigen::Array<T, -1, -1> &,
-    const value_type
-  )
-    requires Complex<T>;
-
-  void calc_swave_anderson()
-    requires Complex<T>;
-  void calc_swave_anderson()
-    requires Real<T>
-  {};
-
-  void s_wave_anderson(
-    const int,
-    const int,
-    const int,
-    const int,
-    const int,
-    const value_type
-  )
-    requires Complex<T>;
-
-  void
-  store_s_wave_anderson(const unsigned, const Eigen::Array<T, -1, 1> &, const Eigen::Array<value_type, -1, 1> &, const Eigen::Array<value_type, -1, -1> &, const Eigen::Array<value_type, -1, -1> &)
     requires Complex<T>;
 };
 

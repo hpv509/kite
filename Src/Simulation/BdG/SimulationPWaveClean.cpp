@@ -12,6 +12,7 @@ template <typename T, unsigned D> class KPM_Vector;
 #include "Hamiltonian.hpp"
 #include "KPM_VectorBasis.hpp"
 #include "KPM_Vector.hpp"
+#include "LocalUnitary.hpp"
 #include "Loop.hpp"
 #include "Coefficients.hpp"
 #include "SigWeight.hpp"
@@ -100,7 +101,7 @@ void Simulation<T, D>::p_wave_clean(
   requires Complex<T>
 {
   debug_message("Entered PWaveClean\n");
-  if constexpr (pairing::is_s_wave) {
+  if constexpr (D != 2 || pairing::is_s_wave) {
     (void)randoms_;
     (void)num_itr_;
     (void)prv_itr_;
@@ -110,115 +111,115 @@ void Simulation<T, D>::p_wave_clean(
     (void)avg_bonds_;
 #pragma omp master
     std::cerr
-      << "p_wave_clean: this build has the on-site channel (PAIRING=3), "
-         "which this solver does not update. Build with PAIRING=2.\n";
+      << (D != 2
+            ? "p_wave_clean: only implemented for D = 2.\n"
+            : "p_wave_clean: this build has the on-site channel (PAIRING=3), "
+              "which this solver does not update. Build with PAIRING=2.\n");
 #pragma omp barrier
     exit(1);
-  }
-  const value_type energy_scale = h.bdg.energy_scale;
-  const value_type size = r.Sizet - r.SizetVacancies;
-  const value_type n_cells = r.Nt;
-  const unsigned max_bonds = h.pr.max_bonds;
-  const unsigned n_slots = max_bonds * r.Orb;
+  } else {
+    const value_type energy_scale = h.bdg.energy_scale;
+    const value_type size = r.Sizet - r.SizetVacancies;
+    const value_type n_cells = r.Nt;
+    const unsigned max_bonds = h.pr.bonds.max_bonds;
+    const unsigned n_slots = max_bonds * r.Orb;
 
-  const Eigen::Array<value_type, -1, 1> coefs =
-    Coefficients::build_fermi_sqrt<value_type>(h.bdg.beta, 0.0);
+    const Eigen::Array<value_type, -1, 1> coefs =
+      Coefficients::build_fermi_sqrt<value_type>(h.bdg.beta, 0.0);
 
-  Eigen::Array<T, -1, -1> mean_delta(max_bonds, r.Orb);
-  Eigen::Array<T, -1, -1> map_delta(max_bonds, r.Orb);
-  Eigen::Array<T, -1, -1> local_delta(max_bonds, r.Orb);
-  Eigen::Array<T, -1, 1> per_orb_p(r.Orb);
-  Eigen::Array<T, -1, 1> per_orb_h(r.Orb);
+    Eigen::Array<T, -1, -1> mean_delta(max_bonds, r.Orb);
+    Eigen::Array<T, -1, -1> map_delta(max_bonds, r.Orb);
+    Eigen::Array<T, -1, -1> local_delta(max_bonds, r.Orb);
+    Eigen::Array<T, -1, 1> per_orb_p(r.Orb);
+    Eigen::Array<T, -1, 1> per_orb_h(r.Orb);
 
-  value_type u_weight = u_init_;
+    value_type u_weight = u_init_;
 
-  mean_delta = h.pr.Delta0;
-  h.pr.symmetrize_bonds(mean_delta);
-  if (avg_bonds_)
-    h.pr.average_bonds(mean_delta);
-  h.pr.broadcast(mean_delta, h.bdg.nn_delta);
+    mean_delta = h.pr.Delta0;
+    h.pr.symmetrize_bonds(mean_delta);
+    if (avg_bonds_)
+      h.pr.average_bonds(mean_delta);
+    h.pr.broadcast(mean_delta, h.bdg.nn_delta);
 
-  const auto record = [&](const unsigned row) {
-    for (unsigned io = 0; io < r.Orb; ++io)
-      for (unsigned b = 0, B = h.pr.NPairings(io); b < B; ++b)
-        Global.nn_delta_hist(row, b + io * max_bonds) =
-          mean_delta(b, io) * energy_scale;
-  };
-#pragma omp master
-  {
-    Global.nn_sum.resize(n_slots);
-    Global.nn_delta_hist.resize(num_itr_ + 1, n_slots);
-    Global.nn_delta_hist.setZero();
-    record(0);
-  }
-#pragma omp barrier
-  h.generate_disorder();
-  KPM_Vector<T, D> phi(2, *this);
-  Eigen::Array<T, -1, 1> ket(2 * r.Sized);
-  Eigen::Array<T, -1, 1> ket_ref(2 * r.Sized);
-
-  for (unsigned itr = prv_itr_ + 1; itr <= prv_itr_ + num_itr_; ++itr) {
-    local_delta.setZero();
-    for (int vec = 0; vec < randoms_; ++vec) {
-      const value_type weight = 1.0 / (vec + 1);
-      h.generate_twists();
-      phi.initiate_phases();
-      phi.set_index(0);
-      phi.initiate_vector();
-      phi.v.col(0) *= std::sqrt(size);
-      ket.setZero();
-      phi.Exchange_Boundaries();
-      for (unsigned n = 0, N = coefs.size(); n < N; ++n) {
-        phi.cheb_iteration(n);
-        ket += coefs(n) * phi.v.col(phi.get_index()).array();
-      }
-      ket_ref = ket;
+    const auto record = [&](const unsigned row) {
       for (unsigned io = 0; io < r.Orb; ++io)
-        for (unsigned b = 0, B = h.pr.NPairings(io); b < B; ++b) {
-          ket = ket_ref;
-          phi.template nn_pairing<1>(1.0, io, b, ket);
-          const Eigen::Array<T, -1, 1> pp =
-            ket.abs2().head(r.Sized).template cast<T>();
-          const Eigen::Array<T, -1, 1> hh =
-            ket.abs2().tail(r.Sized).template cast<T>();
-          h.pr.orbital_sum(pp, per_orb_p);
-          h.pr.orbital_sum(hh, per_orb_h);
-
-          const unsigned jo = h.pr.target_orb(b, io);
-          const value_type tmp_b = 0.5 * h.pr.V;
-          const T f_b = tmp_b * (per_orb_p(io) - per_orb_h(jo));
-          local_delta(b, io) += weight * (f_b - local_delta(b, io));
-        }
+        for (unsigned b = 0, B = h.pr.bonds.NBonds(io); b < B; ++b)
+          Global.nn_delta_hist(row, b + io * max_bonds) =
+            mean_delta(b, io) * energy_scale;
+    };
+#pragma omp master
+    {
+      Global.nn_sum.resize(n_slots);
+      Global.nn_delta_hist.resize(num_itr_ + 1, n_slots);
+      Global.nn_delta_hist.setZero();
+      record(0);
     }
 #pragma omp barrier
+    h.generate_disorder();
+    KPM_Vector<T, D> phi(2, *this);
+    LocalUnitary<T, D> U(r, phi);
+    Eigen::Array<T, -1, 1> ket(2 * r.Sized);
+    Eigen::Array<T, -1, 1> ket_ref(2 * r.Sized);
+
+    for (unsigned itr = prv_itr_ + 1; itr <= prv_itr_ + num_itr_; ++itr) {
+      local_delta.setZero();
+      for (int vec = 0; vec < randoms_; ++vec) {
+        const value_type weight = 1.0 / (vec + 1);
+        h.generate_twists();
+        phi.initiate_phases();
+        phi.set_index(0);
+        phi.initiate_vector();
+        phi.v.col(0) *= std::sqrt(size);
+        phi.Exchange_Boundaries();
+        phi.chebyshev_sum(coefs, ket.data());
+        ket_ref = ket;
+        for (unsigned io = 0; io < r.Orb; ++io)
+          for (unsigned b = 0, B = h.pr.bonds.NBonds(io); b < B; ++b) {
+            ket = ket_ref;
+            U.template pairs<1>(h.pr.bonds, 1, io, b, -1, ket);
+            const Eigen::Array<T, -1, 1> pp =
+              ket.abs2().head(r.Sized).template cast<T>();
+            const Eigen::Array<T, -1, 1> hh =
+              ket.abs2().tail(r.Sized).template cast<T>();
+            h.pr.orbital_sum(pp, per_orb_p);
+            h.pr.orbital_sum(hh, per_orb_h);
+
+            const unsigned jo = h.pr.bonds.target_orb(b, io);
+            const value_type tmp_b = 0.5 * h.pr.V;
+            const T f_b = tmp_b * (per_orb_p(io) - per_orb_h(jo));
+            local_delta(b, io) += weight * (f_b - local_delta(b, io));
+          }
+      }
+#pragma omp barrier
 #pragma omp master
-    Global.nn_sum.setZero();
+      Global.nn_sum.setZero();
 #pragma omp barrier
 #pragma omp critical
-    {
-      for (unsigned io = 0; io < r.Orb; ++io)
-        for (unsigned b = 0, B = h.pr.NPairings(io); b < B; ++b)
-          Global.nn_sum(b + io * max_bonds) += local_delta(b, io);
-    }
+      {
+        for (unsigned io = 0; io < r.Orb; ++io)
+          for (unsigned b = 0, B = h.pr.bonds.NBonds(io); b < B; ++b)
+            Global.nn_sum(b + io * max_bonds) += local_delta(b, io);
+      }
 #pragma omp barrier
-    map_delta.setZero();
-    for (unsigned io = 0; io < r.Orb; ++io)
-      for (unsigned b = 0, B = h.pr.NPairings(io); b < B; ++b)
-        map_delta(b, io) = Global.nn_sum(b + io * max_bonds) / n_cells;
-    h.pr.symmetrize_bonds(map_delta);
-    if (avg_bonds_)
-      h.pr.average_bonds(map_delta);
+      map_delta.setZero();
+      for (unsigned io = 0; io < r.Orb; ++io)
+        for (unsigned b = 0, B = h.pr.bonds.NBonds(io); b < B; ++b)
+          map_delta(b, io) = Global.nn_sum(b + io * max_bonds) / n_cells;
+      h.pr.symmetrize_bonds(map_delta);
+      if (avg_bonds_)
+        h.pr.average_bonds(map_delta);
 
-    u_weight = 1.0 + u_weight / sig_weight_ratio<value_type>(itr, N0_, tau_);
-    const value_type gamma_n = 1.0 / u_weight;
-    mean_delta += gamma_n * (map_delta - mean_delta);
-    h.pr.broadcast(mean_delta, h.bdg.nn_delta);
+      u_weight = 1.0 + u_weight / sig_weight_ratio<value_type>(itr, N0_, tau_);
+      const value_type gamma_n = 1.0 / u_weight;
+      mean_delta += gamma_n * (map_delta - mean_delta);
+      h.pr.broadcast(mean_delta, h.bdg.nn_delta);
 #pragma omp barrier
 #pragma omp master
-    record(itr - prv_itr_);
+      record(itr - prv_itr_);
 #pragma omp barrier
+    }
+    store_p_wave_clean(prv_itr_ + num_itr_, mean_delta, u_weight);
   }
-  store_p_wave_clean(prv_itr_ + num_itr_, mean_delta, u_weight);
 }
 
 template <typename T, unsigned D>
@@ -245,12 +246,12 @@ void Simulation<T, D>::store_p_wave_clean(
     ng = base_grp + "TotalSteps";
     write_hdf5(total_steps, &file, ng);
 
-    const unsigned max_bonds = h.pr.max_bonds;
+    const unsigned max_bonds = h.pr.bonds.max_bonds;
     const unsigned n_slots = max_bonds * r.Orb;
     Eigen::Array<value_type, -1, -1> delta_ri =
       Eigen::Array<value_type, -1, -1>::Zero(2, n_slots);
     for (unsigned io = 0; io < r.Orb; ++io)
-      for (unsigned b = 0, B = h.pr.NPairings(io); b < B; ++b) {
+      for (unsigned b = 0, B = h.pr.bonds.NBonds(io); b < B; ++b) {
         const std::size_t k = b + io * max_bonds;
         delta_ri(0, k) = mean_delta_(b, io).real();
         delta_ri(1, k) = mean_delta_(b, io).imag();

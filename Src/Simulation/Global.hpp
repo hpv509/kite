@@ -8,8 +8,6 @@
 template <typename T>
 struct GLOBAL_VARIABLES {
   std::vector<T> ghosts;
-  std::vector<T> nn_pairing_state;
-  std::vector<T> nn_pairing_result;
   std::vector<std::size_t>    element1;
   std::vector<std::ptrdiff_t> element2_diff;
   std::vector<T> hopping;
@@ -38,6 +36,8 @@ struct GLOBAL_VARIABLES {
   Eigen::Array<T, -1, -1> s_delta_hist;
   Eigen::Array<T, -1,  1> nn_sum;
   Eigen::Array<T, -1, -1> nn_delta_hist;
+
+  Eigen::Array<typename Eigen::NumTraits<T>::Real, -1, -1> bond_mean, bond_m2;
 
   Eigen::Array<T, -1, -1> localized_wavepacket;
   Eigen::Array<T, -1, -1> results_1;

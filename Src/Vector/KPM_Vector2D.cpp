@@ -34,99 +34,112 @@ KPM_Vector<T,2u>::KPM_Vector(int mem, Simulation<T,2> & sim) :
   std(x.basis[1]),
   Io(r.Io),
   offset(r.offset)
-  {
-    unsigned d;
-    Coordinates <std::size_t, 3>     z(r.Ld);
-    Coordinates <int, 3> x(r.nd), dist(r.nd);
-    
-    mult_t1_ghost_cor = new T**[r.Orb];
-    for(unsigned io = 0; io < r.Orb; io++)
-      {
-	mult_t1_ghost_cor[io] = new T*[h.hr.NHoppings(io)];
-	for(unsigned ib = 0; ib < h.hr.NHoppings(io); ib++)
-	  mult_t1_ghost_cor[io][ib] = new T[TILE];
-      }
-    
-    for(unsigned d = 0; d < 2; d++)
-      for(unsigned b = 0; b < 2; b++)
-	{
-	  MemIndBeg[d][b] = new std::size_t[r.Orb];
-	  MemIndEnd[d][b] = new std::size_t[r.Orb];
-	}
-    
-    
-    for(unsigned d = 0; d < 2u; d++)
-      for(unsigned edge = 0; edge < 2; edge++)
-	transf_bound[d][edge] = (r.boundary[d][edge] == true ? r.ld[D - 1 - d] : 0);
-    
-    for(unsigned edge = 0 ; edge < 2; edge++)
-      if(r.boundary[1][edge] == 1) // Botton/Top edge Increase the size due left and right corners
-	transf_bound[1][edge] += (r.boundary[0][0] == 1 ? NGHOSTS : 0 ) + (r.boundary[0][1] == 1 ? NGHOSTS : 0 ) ;
-    
-    for(std::size_t io = 0; io < r.Orb; io++)
-      {
-	d = 0;
-	// Position of initial corner to copy the source
-	MemIndBeg[d][0][io] = z.set({std::size_t(NGHOSTS),               std::size_t(NGHOSTS), io}).index;   
-	MemIndBeg[d][1][io] = z.set({std::size_t(r.Ld[0] - 2 * NGHOSTS), std::size_t(NGHOSTS), io}).index;   
-	// Position of initial corner to copy to the destiny 
-	MemIndEnd[d][0][io] = z.set({std::size_t(0),                     std::size_t(NGHOSTS), io}).index;   
-	MemIndEnd[d][1][io] = z.set({std::size_t(r.Ld[0] - NGHOSTS),     std::size_t(NGHOSTS), io}).index;   
-	
-	d = 1;
-	// Bottom edge 
-	MemIndBeg[d][0][io] = z.set({std::size_t(NGHOSTS), std::size_t(NGHOSTS),             io}).index;
-	MemIndEnd[d][0][io] = z.set({std::size_t(NGHOSTS), std::size_t(0),                   io}).index;          
-	if(r.boundary[1][0] == 1 && r.boundary[0][0] == 1) // Add the Left bottom Corner
-	  { 
-	    MemIndBeg[1][0][io] = z.set({std::size_t(0), std::size_t(NGHOSTS),             io}).index;
-	    MemIndEnd[1][0][io] = z.set({std::size_t(0), std::size_t(0),                   io}).index;
-	  } 
-	// Top Edge 
-	MemIndBeg[d][1][io] = z.set({std::size_t(NGHOSTS), std::size_t(r.Ld[1] - 2*NGHOSTS), io}).index;
-	MemIndEnd[d][1][io] = z.set({std::size_t(NGHOSTS), std::size_t(r.Ld[1] - NGHOSTS),   io}).index;
-	if(r.boundary[1][1] == 1 && r.boundary[0][0] == 1) // Add the Left bottom Corner
-	  {
-	    MemIndBeg[1][1][io] = z.set({std::size_t(0), std::size_t(r.Ld[1] - 2*NGHOSTS), io}).index;
-	    MemIndEnd[1][1][io] = z.set({std::size_t(0), std::size_t(r.Ld[1] - NGHOSTS),   io}).index;
-	  }
-      }
-    
-    for(d = 0 ; d < D; d++)
-      for(unsigned b  = 0 ; b < 2; b++)
-	{
-	  dist.set({0,0,0});
-	  dist.coord[d] = int(b) * 2 - 1;
-	  block[d][b] = x.set_coord( int(r.thread_id) ).add(dist).index;
-	}
-    
-    // JPPP Calcular os vectores das fases devido às condicoes fronteira
-    for(unsigned i = 0; i < D; i ++)
-      for(unsigned j = 0; j < 3; j ++)
-	Fact_Bnd[i][j] = new T[r.Ld[i]];
-    
-    initiate_vector();
+{
+  unsigned d;
+  Coordinates<std::size_t, 3> z(r.Ld);
+  Coordinates<int, 3> x(r.nd), dist(r.nd);
+
+  mult_t1_ghost_cor = new T **[r.Orb];
+  for (unsigned io = 0; io < r.Orb; io++) {
+    mult_t1_ghost_cor[io] = new T *[h.hr.NHoppings(io)];
+    for (unsigned ib = 0; ib < h.hr.NHoppings(io); ib++)
+      mult_t1_ghost_cor[io][ib] = new T[TILE];
   }
 
-template <typename T>
-KPM_Vector <T, 2>::~KPM_Vector(void){
-  for(unsigned d = 0; d < 2; d++)
-    for(unsigned b = 0; b < 2; b++)
-      {
-        delete MemIndBeg[d][b];
-        delete MemIndEnd[d][b];
-      }
-  for(unsigned io = 0; io < r.Orb;io++)
-    {	
-      for(unsigned ib = 0; ib < h.hr.NHoppings(io); ib++)
-        delete mult_t1_ghost_cor[io][ib];
-      delete mult_t1_ghost_cor[io];
+  for (unsigned d = 0; d < 2; d++)
+    for (unsigned b = 0; b < 2; b++) {
+      MemIndBeg[d][b] = new std::size_t[r.Orb];
+      MemIndEnd[d][b] = new std::size_t[r.Orb];
     }
-  delete mult_t1_ghost_cor;
+
+  for (unsigned d = 0; d < 2u; d++)
+    for (unsigned edge = 0; edge < 2; edge++)
+      transf_bound[d][edge] =
+        (r.boundary[d][edge] == true ? r.ld[D - 1 - d] : 0);
+
+  for (unsigned edge = 0; edge < 2; edge++)
+    if (r.boundary[1][edge] ==
+        1) // Botton/Top edge Increase the size due left and right corners
+      transf_bound[1][edge] += (r.boundary[0][0] == 1 ? NGHOSTS : 0) +
+                               (r.boundary[0][1] == 1 ? NGHOSTS : 0);
+
+  for (std::size_t io = 0; io < r.Orb; io++) {
+    d = 0;
+    // Position of initial corner to copy the source
+    MemIndBeg[d][0][io] =
+      z.set({std::size_t(NGHOSTS), std::size_t(NGHOSTS), io}).index;
+    MemIndBeg[d][1][io] =
+      z.set({std::size_t(r.Ld[0] - 2 * NGHOSTS), std::size_t(NGHOSTS), io})
+        .index;
+    // Position of initial corner to copy to the destiny
+    MemIndEnd[d][0][io] =
+      z.set({std::size_t(0), std::size_t(NGHOSTS), io}).index;
+    MemIndEnd[d][1][io] =
+      z.set({std::size_t(r.Ld[0] - NGHOSTS), std::size_t(NGHOSTS), io}).index;
+
+    d = 1;
+    // Bottom edge
+    MemIndBeg[d][0][io] =
+      z.set({std::size_t(NGHOSTS), std::size_t(NGHOSTS), io}).index;
+    MemIndEnd[d][0][io] =
+      z.set({std::size_t(NGHOSTS), std::size_t(0), io}).index;
+    if (r.boundary[1][0] == 1 &&
+        r.boundary[0][0] == 1) // Add the Left bottom Corner
+    {
+      MemIndBeg[1][0][io] =
+        z.set({std::size_t(0), std::size_t(NGHOSTS), io}).index;
+      MemIndEnd[1][0][io] = z.set({std::size_t(0), std::size_t(0), io}).index;
+    }
+    // Top Edge
+    MemIndBeg[d][1][io] =
+      z.set({std::size_t(NGHOSTS), std::size_t(r.Ld[1] - 2 * NGHOSTS), io})
+        .index;
+    MemIndEnd[d][1][io] =
+      z.set({std::size_t(NGHOSTS), std::size_t(r.Ld[1] - NGHOSTS), io}).index;
+    if (r.boundary[1][1] == 1 &&
+        r.boundary[0][0] == 1) // Add the Left bottom Corner
+    {
+      MemIndBeg[1][1][io] =
+        z.set({std::size_t(0), std::size_t(r.Ld[1] - 2 * NGHOSTS), io}).index;
+      MemIndEnd[1][1][io] =
+        z.set({std::size_t(0), std::size_t(r.Ld[1] - NGHOSTS), io}).index;
+    }
+  }
+
+  for (d = 0; d < D; d++)
+    for (unsigned b = 0; b < 2; b++) {
+      dist.set({0, 0, 0});
+      dist.coord[d] = int(b) * 2 - 1;
+      block[d][b] = x.set_coord(int(r.thread_id)).add(dist).index;
+    }
+
+  // JPPP Calcular os vectores das fases devido às condicoes fronteira
+  for (unsigned i = 0; i < D; i++)
+    for (unsigned j = 0; j < 3; j++)
+      Fact_Bnd[i][j] = new T[r.Ld[i]];
+
+  initiate_vector();
 }
 
-template <typename T>
-void KPM_Vector<T, 2>::initiate_vector()
+template <typename T> KPM_Vector<T, 2>::~KPM_Vector(void)
+{
+  for (unsigned d = 0; d < 2; d++)
+    for (unsigned b = 0; b < 2; b++) {
+      delete[] MemIndBeg[d][b];
+      delete[] MemIndEnd[d][b];
+    }
+  for (unsigned io = 0; io < r.Orb; io++) {
+    for (unsigned ib = 0; ib < h.hr.NHoppings(io); ib++)
+      delete[] mult_t1_ghost_cor[io][ib];
+    delete[] mult_t1_ghost_cor[io];
+  }
+  delete[] mult_t1_ghost_cor;
+  for (unsigned i = 0; i < D; i++)
+    for (unsigned j = 0; j < 3; j++)
+      delete[] Fact_Bnd[i][j];
+}
+
+template <typename T> void KPM_Vector<T, 2>::initiate_vector()
 {
   index = 0;
 
@@ -463,7 +476,7 @@ void inline KPM_Vector<T, 2>::mult_local_disorder(
     for (std::size_t j = j0; j < j1; j += std) {
       for (std::size_t i = j; i < j + TILE; ++i)
         phi0[i] += order * h.U_Anderson[i + dd] * phiM1[i];
-      if constexpr (is_bdg) {
+      if constexpr (pairing::is_bdg) {
         for (std::size_t i = j; i < j + TILE; ++i)
           phi0[i + offset] -= order * h.U_Anderson[i + dd] * phiM1[i + offset];
       }
@@ -473,7 +486,7 @@ void inline KPM_Vector<T, 2>::mult_local_disorder(
     for (std::size_t j = j0; j < j1; j += std) {
       for (std::size_t i = j; i < j + TILE; ++i)
         phi0[i] += tmp * phiM1[i];
-      if constexpr (is_bdg) {
+      if constexpr (pairing::is_bdg) {
         for (std::size_t i = j + offset; i < j + TILE + offset; ++i)
           phi0[i] -= tmp * phiM1[i];
       }
@@ -514,7 +527,7 @@ void inline KPM_Vector<T, 2>::mult_regular_hoppings(
         phi0[i] += t1 * f1 * phiM1[i + d1];
         ++x;
       }
-      if constexpr (is_bdg) {
+      if constexpr (pairing::is_bdg) {
         const T t2 = myconj(t_bare) * phase_y;
         x = 0;
         for (std::size_t i = j; i < j + TILE; i++) {
@@ -540,7 +553,7 @@ void KPM_Vector<T, 2>::mult_position(
   Eigen::Map<Eigen::Matrix<std::ptrdiff_t, 2, 1>> v_global(global.coord);
   const value_type dr = r.rLat(dir_, 0);
   const Eigen::Matrix<double, 2, 1> org_global(0.5 * r.Lt[0], 0.5 * r.Lt[1]);
-  constexpr unsigned scale = is_bdg + 1;
+  constexpr unsigned scale = pairing::is_bdg + 1;
 
   for (unsigned io = 0, Io = r.Orb; io < Io; ++io) {
     const value_type r_orb = r.rOrb(dir_, io);
@@ -562,64 +575,6 @@ void KPM_Vector<T, 2>::mult_position(
 }
 
 template <typename T>
-template <unsigned MULT>
-void KPM_Vector<T, 2>::mult_diag_bdg_terms(const std::size_t j0_)
-{
-  constexpr value_type order = MULT + 1;
-  const std::size_t j1 = j0_ + TILE * std;
-  for (std::size_t j = j0_; j < j1; j += std)
-    for (std::size_t i = j; i < j + TILE; ++i) {
-      const std::size_t o = i + offset;
-      const T ht = order * h.bdg.onsite(i);
-      phi0[i] += phiM1[i] * ht;
-      phi0[o] -= phiM1[o] * ht;
-      if constexpr (pairing::is_s_wave) {
-        const T sd = order * h.bdg.s_delta(i);
-        phi0[i] += phiM1[o] * sd;
-        phi0[o] += phiM1[i] * myconj(sd);
-      }
-    }
-}
-
-template <typename T>
-template <unsigned MULT>
-void inline KPM_Vector<T, 2>::mult_pairing_bonds(
-  const std::size_t j0,
-  const std::size_t io
-)
-  requires Complex<T>
-{
-  constexpr value_type order = MULT + 1;
-  const std::size_t j1 = j0 + TILE * std;
-  std::size_t hop[2], x, y;
-
-  const std::size_t rr[2] =
-    {j0 % r.Ld[0], (j0 % (r.Ld[0] * r.Ld[1])) / r.Ld[0]};
-
-  for (unsigned b = 0, B = h.pr.NPairings(io); b < B; ++b) {
-    const std::ptrdiff_t d1 = h.pr.dist_tile(b, io);
-    const std::size_t i_f = j0 + d1;
-    hop[0] = (i_f % r.Ld[0]) - rr[0] + 1;
-    hop[1] = (i_f % (r.Ld[0] * r.Ld[1])) / (r.Ld[0]) - rr[1] + 1;
-
-    y = 0;
-    for (std::size_t j = j0; j < j1; j += std) {
-      const T phase_y = Fact_Bnd[1][hop[1]][rr[1] + y];
-      x = 0;
-      for (std::size_t i = j; i < j + TILE; i++) {
-        const T f1 = Fact_Bnd[0][hop[0]][rr[0] + x];
-        const T bp = phase_y * f1;
-        const T nd = order * h.bdg.nn_delta(b, i);
-        phi0[i] += nd * bp * phiM1[i + d1 + offset];
-        phi0[i + offset] += myconj(nd) * bp * phiM1[i + d1];
-        ++x;
-      }
-      ++y;
-    }
-  }
-}
-
-template <typename T>
 template <unsigned MULT, bool VELOCITY>
 void KPM_Vector<T, 2>::KPM_MOTOR(KPM_Vector<T, 2> *kpm_final, unsigned axis)
 {
@@ -627,6 +582,9 @@ void KPM_Vector<T, 2>::KPM_MOTOR(KPM_Vector<T, 2> *kpm_final, unsigned axis)
   phi0 = kpm_final->v.col(kpm_final->index).data();
   phiM1 = v.col((memory - 1 + index) % memory).data();
   phiM2 = v.col((memory - 2 + index) % memory).data();
+  // checks if result can be added as soon as TILE is done
+  const bool fused = acc && h.hd.empty() && h.cross_mozaic_indexes.empty() &&
+                     h.hV.vacancies_with_defects.empty();
 
   // Initialize tiles that have deffects connecting elements of a previous tile
   for (auto istr = h.cross_mozaic_indexes.begin();
@@ -654,10 +612,15 @@ void KPM_Vector<T, 2>::KPM_MOTOR(KPM_Vector<T, 2> *kpm_final, unsigned axis)
         // Hoppings
         mult_regular_hoppings<MULT>(j0, io);
 
-        if constexpr (pairing::is_bdg)
-          mult_diag_bdg_terms<MULT>(j0);
-        if constexpr (pairing::is_p_wave)
-          mult_pairing_bonds<MULT>(j0, io);
+        if constexpr (Complex<T>) {
+          if constexpr (pairing::is_bdg)
+            h.pr.template diagonal<MULT>(phi0, phiM1, j0, h.bdg.onsite);
+          if constexpr (pairing::is_s_wave)
+            h.pr.template s_wave<MULT>(phi0, phiM1, j0, h.bdg.s_delta);
+          if constexpr (pairing::is_p_wave)
+            h.pr.template p_wave<
+              MULT>(phi0, phiM1, j0, io, Fact_Bnd, h.bdg.nn_delta);
+        }
       }
       KPM_VectorBasis<T, 2u>::template multiply_defect<
         MULT, VELOCITY>(istr, phi0, phiM1, axis);
@@ -665,14 +628,16 @@ void KPM_Vector<T, 2>::KPM_MOTOR(KPM_Vector<T, 2> *kpm_final, unsigned axis)
       // Empty the vacancies in the tile
       for (const auto &k : h.hV.position[istr]) {
         phi0[k] = 0.;
-        if constexpr (is_bdg)
+        if constexpr (pairing::is_bdg)
           phi0[k + offset] = 0.;
       }
+      if (fused)
+        accumulate_tile(i0, i1);
     }
   }
   for (const auto &vc : h.hV.vacancies_with_defects) {
     phi0[vc] = 0.;
-    if constexpr (is_bdg)
+    if constexpr (pairing::is_bdg)
       phi0[vc + offset] = 0.;
   }
   /*
@@ -684,6 +649,55 @@ void KPM_Vector<T, 2>::KPM_MOTOR(KPM_Vector<T, 2> *kpm_final, unsigned axis)
   for (auto &id : h.hd)
     id.template multiply_broken_defect<MULT, VELOCITY>(phi0, phiM1, axis);
   kpm_final->Exchange_Boundaries();
+
+  if (acc) {
+    // defects may have changed finished tiles: add them all now
+    if (!fused)
+      for (i1 = NGHOSTS; i1 < r.Ld[1] - NGHOSTS; i1 += TILE)
+        for (i0 = NGHOSTS; i0 < r.Ld[0] - NGHOSTS; i0 += TILE)
+          accumulate_tile(i0, i1);
+    accumulate_ghosts();
+  }
+}
+
+// acc += acc_c phi0
+template <typename T>
+void KPM_Vector<T, 2>::accumulate_tile(std::size_t i0, std::size_t i1)
+{
+  constexpr unsigned scale = pairing::is_bdg + 1;
+  for (unsigned s = 0; s < scale; ++s)
+    for (std::size_t io = 0; io < r.Orb; ++io) {
+      const std::size_t j0 = s * offset + io * x.basis[2] + i0 + i1 * std;
+      for (std::size_t j = j0; j < j0 + TILE * std; j += std)
+        for (std::size_t i = j; i < j + TILE; ++i)
+          acc[i] += acc_c * phi0[i];
+    }
+}
+
+// We need this since Pairing methods read information from ket's ghosts
+template <typename T> void KPM_Vector<T, 2>::accumulate_ghosts()
+{
+  constexpr unsigned scale = pairing::is_bdg + 1;
+  for (unsigned s = 0; s < scale; ++s)
+    for (std::size_t io = 0; io < r.Orb; ++io) {
+      const std::size_t base = s * offset + io * x.basis[2];
+      for (std::size_t g = 0; g < NGHOSTS; ++g) {
+        const std::size_t bottom = base + g * std;
+        const std::size_t top = base + (r.Ld[1] - 1 - g) * std;
+        for (std::size_t i = 0; i < r.Ld[0]; ++i) {
+          acc[bottom + i] += acc_c * phi0[bottom + i];
+          acc[top + i] += acc_c * phi0[top + i];
+        }
+      }
+      for (std::size_t i1 = NGHOSTS; i1 < r.Ld[1] - NGHOSTS; ++i1) {
+        const std::size_t left = base + i1 * std;
+        const std::size_t right = left + r.Ld[0] - NGHOSTS;
+        for (std::size_t g = 0; g < NGHOSTS; ++g) {
+          acc[left + g] += acc_c * phi0[left + g];
+          acc[right + g] += acc_c * phi0[right + g];
+        }
+      }
+    }
 }
 template <typename T>
 void KPM_Vector<T, 2>::measure_wave_packet(T *bra, T *ket, T *results)
@@ -741,7 +755,7 @@ void KPM_Vector<T, 2>::Exchange_Boundaries()
   Coordinates<std::size_t, 3u> x(r.Ld), z(r.Lt);
   T *phi = v.col(index).data();
 
-  constexpr unsigned scale = is_bdg + 1;
+  constexpr unsigned scale = pairing::is_bdg + 1;
   for (unsigned d = 0; d < 2; d++) {
     const std::size_t sector_size = r.Orb * transf_max[d] * NGHOSTS;
     const std::size_t BSize = sector_size * scale;

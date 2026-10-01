@@ -25,13 +25,13 @@ private:
   T *phi0;
   T *phiM1;
   T *phiM2;
-  T *pair_buf; // buffer for bond pairing rotations
   const std::size_t std;
   const std::size_t Io;
   const std::size_t offset;
+  T *acc = nullptr;
+  T acc_c = 0;
 
 public:
-  static inline constexpr unsigned is_bdg = pairing::is_bdg;
   using value_type = typename extract_scalar<T>::type;
   T *Fact_Bnd[D][3]; //3 Modos [Salto Positivo, Não Salto, Salto Negativo]
   using KPM_VectorBasis<T, 2>::simul;
@@ -74,166 +74,31 @@ public:
     const std::size_t &io
   );
   void mult_position(const unsigned, KPM_Vector<T, 2> *);
-  template <int S, typename Derived>
-  void pairing(const T, Derived &&state_)
-    requires Real<T>
-  {};
-  template <unsigned MULT>
-  void mult_diag_bdg_terms(const std::size_t);
-  template <unsigned MULT>
-  void mult_pairing_bonds(const std::size_t, const std::size_t)
-    requires Complex<T>;
-  template <unsigned MULT>
-  void mult_pairing_bonds(const std::size_t, const std::size_t)
-    requires Real<T>
-  {};
   template <unsigned MULT, bool VELOCITY>
   void KPM_MOTOR(KPM_Vector<T, 2> *kpm_final, unsigned axis);
 
   template <unsigned MULT, bool VELOCITY>
   void multiply_defect(std::size_t, T *&, T *&, unsigned axis);
 
+  template <typename C> void chebyshev_sum(const C &coefs, T *ket)
+  {
+    const std::size_t n_rows = v.rows();
+    this->cheb_iteration(0);
+    const T *t0 = v.col(this->get_index()).data();
+    for (std::size_t i = 0; i < n_rows; ++i)
+      ket[i] = coefs(0) * t0[i];
+    acc = ket;
+    for (unsigned n = 1, N = coefs.size(); n < N; ++n) {
+      acc_c = T(coefs(n));
+      this->cheb_iteration(n);
+    }
+    acc = nullptr;
+  }
+
+  void accumulate_tile(std::size_t i0, std::size_t i1);
+  void accumulate_ghosts();
   void measure_wave_packet(T *bra, T *ket, T *results);
   void Exchange_Boundaries();
   void test_boundaries_system();
   void empty_ghosts(int mem_index);
-
-  static inline void
-  rotate_pair(T &p, T &hl, const T &gd, const T &gc, const value_type norm)
-    requires Complex<T>
-  {
-    const T tmp_p = p + gc * hl;
-    const T tmp_h = -gd * p + hl;
-    p = norm * tmp_p;
-    hl = norm * tmp_h;
-  }
-
-  template <int S, typename Derived>
-  void pairing(const T gamma_, Derived &&state_)
-    requires Complex<T>
-  {
-    static_assert(S == -1 || S == 1);
-    // constexpr value_type norm = 1 / std::sqrt(2);
-    const value_type norm = 1 / std::sqrt(2);
-    const T gd = static_cast<T>(S) * gamma_;
-    const T gc = std::conj(gd);
-    Coordinates<std::size_t, 3> local(r.Ld);
-
-    for (unsigned io = 0; io < r.Orb; ++io)
-      for (unsigned i1 = NGHOSTS, I1 = r.Ld[1] - NGHOSTS; i1 < I1; ++i1) {
-        local.set({std::size_t(NGHOSTS), std::size_t(i1), std::size_t(io)});
-        std::size_t pair_0 = local.index;
-        std::size_t pair_1 = pair_0 + offset;
-        for (std::size_t i0 = 0, I0 = r.ld[0]; i0 < I0; ++i0) {
-          T p = state_.coeff(pair_0);
-          T hl = state_.coeff(pair_1);
-          rotate_pair(p, hl, gd, gc, norm);
-          state_.coeffRef(pair_0) = p;
-          state_.coeffRef(pair_1) = hl;
-          ++pair_0;
-          ++pair_1;
-        }
-      }
-#pragma omp barrier
-  }
-
-  // Boundary phase e^{i phi_ij} attached to H_{p_i, h_j} for bond (io, b)
-  // leaving the site with local coordinates (x0, x1); same factor as the kernel.
-  T bond_phase(
-    const unsigned io_,
-    const unsigned b_,
-    const std::size_t x0_,
-    const std::size_t x1_
-  ) const
-  {
-    const int s0 = h.pr.shift(0 * h.pr.max_bonds + b_, io_);
-    const int s1 = h.pr.shift(1 * h.pr.max_bonds + b_, io_);
-    return Fact_Bnd[0][s0 + 1][x0_] * Fact_Bnd[1][s1 + 1][x1_];
-  }
-
-  template <int S>
-  void pair_window(
-    const unsigned io_,
-    const unsigned b_,
-    std::size_t (&beg)[D],
-    std::size_t (&end)[D]
-  ) const
-  {
-    static_assert(S == -1 || S == 1);
-    for (unsigned k = 0; k < D; ++k) {
-      beg[k] = NGHOSTS;
-      end[k] = r.Ld[k] - NGHOSTS;
-      int dr = h.pr.shift(k * h.pr.max_bonds + b_, io_);
-      dr *= S;
-      if (dr < 0 && !r.boundary[k][0])
-        beg[k] += 1;
-      else if (dr > 0 && !r.boundary[k][1])
-        end[k] -= 1;
-    }
-  }
-
-  // S = -1: partition -> lattice, S = 1: lattice -> partition
-  template <int S, typename Derived>
-  void nn_pairing(
-    const T gamma_,
-    const unsigned io_,
-    const unsigned b_,
-    Derived &&state_
-  )
-    requires Complex<T>
-  {
-    static_assert(S == -1 || S == 1);
-    // constexpr value_type norm = 1 / std::sqrt(2);
-    const value_type norm = 1 / std::sqrt(2);
-
-    const std::size_t jo = h.pr.target_orb(b_, io_);
-    const std::ptrdiff_t s = h.pr.dist_tile(b_, io_);
-
-    const T gd = static_cast<T>(S) * gamma_;
-    const int s0 = h.pr.shift(0 * h.pr.max_bonds + b_, io_);
-    const int s1 = h.pr.shift(1 * h.pr.max_bonds + b_, io_);
-    // Fact_Bnd[k][-s_k+1][j_k] == conj( Fact_Bnd[k][s_k+1][i_k] )
-    const T *const fx_p = Fact_Bnd[0][s0 + 1];
-    const T *const fy_p = Fact_Bnd[1][s1 + 1];
-    const T *const fx_h = Fact_Bnd[0][-s0 + 1];
-    const T *const fy_h = Fact_Bnd[1][-s1 + 1];
-
-    std::size_t ob = x.basis[2];
-    const std::size_t io_base = io_ * ob;
-    const std::size_t jo_base = jo * ob;
-
-    for (std::size_t c = 0; c < r.Nd; ++c)
-      pair_buf[c] = state_.coeff(jo_base + c + offset);
-
-    // hole sector: j owned, partner i = j - s still holds its old value
-    std::size_t p_beg[D];
-    std::size_t p_end[D];
-
-    pair_window<-1>(io_, b_, p_beg, p_end);
-    for (std::size_t i1 = p_beg[1]; i1 < p_end[1]; ++i1) {
-      const std::size_t row = i1 * std + jo_base;
-      const T gy = fy_h[i1];
-      for (std::size_t i0 = p_beg[0]; i0 < p_end[0]; ++i0) {
-        const std::size_t j = row + i0;
-        const std::ptrdiff_t i = static_cast<std::size_t>(j - s);
-        const T gd = value_type(S) * gamma_ * gy * fx_h[i0];
-        state_.coeffRef(j + offset) =
-          norm * (-gd * state_.coeff(i) + pair_buf[j - jo_base]);
-      }
-    }
-    // particle side: i owned, partner at j = i + s
-    pair_window<1>(io_, b_, p_beg, p_end);
-    for (std::size_t i1 = p_beg[1]; i1 < p_end[1]; ++i1) {
-      const std::size_t row = i1 * std + io_base;
-      const T gy = fy_p[i1];
-      for (std::size_t i0 = p_beg[0]; i0 < p_end[0]; ++i0) {
-        const std::ptrdiff_t i = row + i0;
-        const std::size_t jc = static_cast<std::size_t>(i + s) - jo_base;
-        const T gd = value_type(S) * gamma_ * myconj(gy * fx_p[i0]);
-        const T gc = myconj(gd);
-        state_.coeffRef(i) = norm * (state_.coeff(i) + gc * pair_buf[jc]);
-      }
-    }
-#pragma omp barrier
-  }
 };
