@@ -14,6 +14,8 @@ public:
   using ComplexTraits<T>::assign_value;
   using ComplexTraits<T>::myconj;
   using value_type = typename extract_scalar<T>::type;
+  const unsigned seed_v;
+  const unsigned seed_h;
   KPMRandom<T> rnd;
   std::vector<T> ghosts;
   LatticeStructure<D> r;
@@ -404,6 +406,26 @@ public:
     const Eigen::Array<T, -1, -1> &,
     const value_type
   )
+    requires Complex<T>;
+
+  void calc_swave_anderson()
+    requires Complex<T>;
+  void calc_swave_anderson()
+    requires Real<T>
+  {};
+
+  void s_wave_anderson(
+    const int,
+    const int,
+    const int,
+    const int,
+    const int,
+    const value_type
+  )
+    requires Complex<T>;
+
+  void
+  store_s_wave_anderson(const unsigned, const Eigen::Array<T, -1, 1> &, const Eigen::Array<value_type, -1, 1> &, const Eigen::Array<value_type, -1, -1> &, const Eigen::Array<value_type, -1, -1> &)
     requires Complex<T>;
 };
 

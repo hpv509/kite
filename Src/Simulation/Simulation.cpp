@@ -28,11 +28,13 @@ Simulation<T, D>::Simulation(
   const unsigned seed_v_,
   const unsigned seed_h_
 ) :
-  rnd(seed_v_),
+  seed_v(seed_v_),
+  seed_h(seed_h_),
+  rnd(seed_v),
   r(filename),
   Global(Global1),
   name(filename),
-  h(name, r, Global1, seed_h_)
+  h(name, r, Global1, seed_h)
 {
   // Initializes the Hamiltonian h, an instance of Lattice Structure r,
   // and an instance of GLOBAL_VARIABLES Global1

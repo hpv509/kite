@@ -11,6 +11,7 @@
 #include "LatticeStructure.hpp"
 #include "myHDF5.hpp"
 #include "Random.hpp"
+#include "mpi_utils.hpp"
 template <typename T, unsigned D>
 class Hamiltonian;
 template <typename T, unsigned D>
@@ -18,18 +19,11 @@ class KPM_Vector;
 #include "Simulation.hpp"
 #include "SimulationGlobal.hpp"
 #include "Hamiltonian.hpp"
+
 template <typename T, unsigned D>
 GlobalSimulation<T, D>::GlobalSimulation(char *name) : rglobal(name)
 {
   debug_message("Entered global_simulation\n");
-
-  // rglobal is an instance of Lattice Structure which contains all the information
-  // about the periodic part of the lattice and the unit cell. It contains the
-  // lattice vectors, the number of threads, the size of the lattice inside each
-  // thread, thread id, orbital positions, etc
-
-  // Global is an instance of GLOBAL_VARIABLES which contains global objects to be
-  // shared among all threads
 
   const std::size_t global_ghost_size =
     rglobal.get_BorderSize() * (pairing::is_bdg + 1);
@@ -57,17 +51,17 @@ GlobalSimulation<T, D>::GlobalSimulation(char *name) : rglobal(name)
   get_hdf5<unsigned>(&s1, &file, path);
   file.close();
   omp_set_num_threads(rglobal.n_threads);
+  const unsigned s1r = s1 + 1000003 * static_cast<unsigned>(kmpi::rank());
 
   using value_type = typename extract_scalar<T>::type;
   GlobalFFT<value_type> global_fft;
   global_fft.allocate(rglobal.Sizet);
-
   debug_message("Starting parallelization\n");
 #pragma omp parallel default(shared)
   {
     const unsigned thread_id = omp_get_thread_num();
     const unsigned seed_h = (s0 != 0) * 2654435761 * (thread_id + 8191 * s0);
-    const unsigned seed_v = (s1 != 0) * 3242174893 * (thread_id + 7919 * s1);
+    const unsigned seed_v = (s1 != 0) * 3242174893 * (thread_id + 7919 * s1r);
     Simulation<T, D> simul(name, Global, seed_v, seed_h);
     simul.calc_conddc();
     simul.calc_condopt();
@@ -91,6 +85,7 @@ GlobalSimulation<T, D>::GlobalSimulation(char *name) : rglobal(name)
     simul.calc_pwave_clean();
     simul.calc_spwave_clean();
     simul.calc_swave();
+    simul.calc_swave_anderson();
   }
   debug_message("Left global_simulation\n");
 }

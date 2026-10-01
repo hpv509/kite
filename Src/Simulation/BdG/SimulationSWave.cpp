@@ -5,8 +5,10 @@
 #include "Random.hpp"
 #include "Coordinates.hpp"
 #include "LatticeStructure.hpp"
-template <typename T, unsigned D> class Hamiltonian;
-template <typename T, unsigned D> class KPM_Vector;
+template <typename T, unsigned D>
+class Hamiltonian;
+template <typename T, unsigned D>
+class KPM_Vector;
 #include "queue.hpp"
 #include "Simulation.hpp"
 #include "Hamiltonian.hpp"
@@ -15,9 +17,10 @@ template <typename T, unsigned D> class KPM_Vector;
 #include "Loop.hpp"
 #include "Coefficients.hpp"
 
-constexpr unsigned SWAVE_N_SYM = 16;
+constexpr unsigned SWAVE_N_SYM = 4;
 
-template <typename T> T sw_weight_ratio(const T n, const T N0, const T tau)
+template <typename T>
+T sw_weight_ratio(const T n, const T N0, const T tau)
 {
   if (std::isinf(N0))
     return std::exp(T(1.0) / tau);

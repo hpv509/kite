@@ -71,6 +71,6 @@ struct GLOBAL_VARIABLES {
   bool calculate_sp_wave;
 
   GLOBAL_VARIABLES();
-  void addbond ( std::size_t, std::ptrdiff_t, T );
-  void addlocal( std::size_t,  T);
+  void addbond(std::size_t, std::ptrdiff_t, T);
+  void addlocal(std::size_t, T);
 };

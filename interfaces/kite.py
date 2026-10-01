@@ -825,6 +825,11 @@ class Calculation:
         return self._s_wave_c
 
     @property
+    def get_s_wave_anderson(self):
+        """Returns the requested clean s-wave calculation with Anderson mixing."""
+        return self._s_wave_a
+
+    @property
     def get_p_wave(self):
         """Returns the requested p-wave calculation."""
         return self._p_wave
@@ -941,6 +946,7 @@ class Calculation:
         self._energy_shift = configuration.energy_shift
         self._s_wave                         = []
         self._s_wave_c                       = []
+        self._s_wave_a                       = []
         self._p_wave                         = []
         self._p_wave_c                       = []
         self._sp_wave_c                      = []
@@ -1019,6 +1025,37 @@ class Calculation:
             "N0": N0,
             "tau": tau,
             "u_init": u_init,
+        })
+
+    def s_wave_anderson(self, num_random_transient, transient_iterations,
+                        tail_stages, stage_iterations=3, depth=5, mixing=1.0):
+        """Self-consistent onsite s-wave gap, Anderson mixing throughout.
+
+        Transient: `transient_iterations` Anderson steps on one frozen set of
+        `num_random_transient` (R0) vectors per MPI rank.
+        Tail: `tail_stages` stages; stage k runs `stage_iterations` Anderson
+        steps on a frozen set of R0 * 2**k vectors (nested: the first
+        vectors are the transient's), starting from the previous stage.
+        The result is the last stage's Delta. Needs non-zero seeds.
+        """
+        n_tr, n_st, n_it = int(transient_iterations), int(tail_stages), int(stage_iterations)
+        if n_tr < 1 or n_st < 0:
+            raise SystemExit('s_wave_anderson: transient_iterations >= 1 and tail_stages >= 0 required.')
+        if n_st > 0 and n_it < 1:
+            raise SystemExit('s_wave_anderson: stage_iterations must be >= 1.')
+        if int(num_random_transient) <= 0:
+             raise SystemExit('s_wave_anderson: num_random_transient must be positive.')
+        if int(depth) < 0:
+            raise SystemExit('s_wave_anderson: depth must be >= 0.')
+        if not float(mixing) > 0.0:
+            raise SystemExit('s_wave_anderson: mixing must be positive.')
+        self._s_wave_a.append({
+            "num_random_transient": int(num_random_transient),
+            "transient_iterations": n_tr,
+            "tail_stages": n_st,
+            "stage_iterations": max(n_it, 1),
+            "depth": int(depth),
+            "mixing": float(mixing),
         })
 
     def p_wave(self, num_random, beta, chemical_potential, u, v, gamma, s_delta, nn_delta):
@@ -1792,7 +1829,8 @@ def config_system(lattice, config, calculation, modification=None, **kwargs):
         config._is_complex = 1
         config.set_type()
 
-    if (calculation.get_s_wave or calculation.get_s_wave_c or calculation.get_p_wave) and complx == 0:
+    if (calculation.get_s_wave or calculation.get_s_wave_c or calculation.get_s_wave_anderson
+            or calculation.get_p_wave) and complx == 0:
         print('A superconducting BdG calculation was requested, but is_complex is 0. Automatically turning is_complex to 1!')
         config._is_complex = 1
         config.set_type()
@@ -1813,6 +1851,20 @@ def config_system(lattice, config, calculation, modification=None, **kwargs):
             'Request s_wave or s_wave_clean, not both: they share h.bdg.s_delta '
             'and the random-vector stream, so running them from one file does not '
             'compare like with like. Write two files with identical seeds.')
+    if calculation.get_s_wave_anderson:
+        if kwargs.get('pairing', None) is None or kwargs.get('bdg', None) is None:
+            raise SystemExit(
+                'An s_wave_anderson calculation needs config_system(..., '
+                'pairing=kite.Pairing(...), bdg=kite.BdG(...)).')
+        if calculation.get_s_wave or calculation.get_s_wave_c:
+            raise SystemExit(
+                'Request s_wave_anderson in its own file, not together with '
+                's_wave or s_wave_clean. Write separate files with identical seeds.')
+        if config.seed_h == 0 or config.seed_v == 0:
+            raise SystemExit(
+                's_wave_anderson needs seed_h != 0 and seed_v != 0 in '
+                'kite.Configuration: seed 0 means std::random_device, and the '
+                'random vectors would not be the same at every iteration.')
 
     if kwargs.get('pairing', None) is not None and complx == 0:
         print('A pairing channel was supplied, but is_complex is 0. Automatically turning is_complex to 1!')
@@ -2304,6 +2356,20 @@ def config_system(lattice, config, calculation, modification=None, **kwargs):
         grpc_p.create_dataset('N0', data=single_s_wave['N0'], dtype=np.float64)
         grpc_p.create_dataset('Tau', data=single_s_wave['tau'], dtype=np.float64)
         grpc_p.create_dataset('InitDamping', data=single_s_wave['u_init'], dtype=np.float64)
+
+    if calculation.get_s_wave_anderson:
+        if len(calculation.get_s_wave_anderson) > 1:
+            raise SystemExit('Only a single s-wave calculation is currently allowed.')
+
+        single_s_wave = calculation.get_s_wave_anderson[0]
+
+        grpc_p = grpc.create_group('s_wave_anderson')
+        grpc_p.create_dataset('NumRandomsTransient', data=single_s_wave['num_random_transient'], dtype=np.int32)
+        grpc_p.create_dataset('TransientIterations', data=single_s_wave['transient_iterations'], dtype=np.int32)
+        grpc_p.create_dataset('TailStages', data=single_s_wave['tail_stages'], dtype=np.int32)
+        grpc_p.create_dataset('StageIterations', data=single_s_wave['stage_iterations'], dtype=np.int32)
+        grpc_p.create_dataset('Depth', data=single_s_wave['depth'], dtype=np.int32)
+        grpc_p.create_dataset('Mixing', data=single_s_wave['mixing'], dtype=np.float64)
 
     if calculation.get_p_wave:
         if len(calculation.get_p_wave) > 1:

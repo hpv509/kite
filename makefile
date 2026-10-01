@@ -26,6 +26,12 @@ CPPFLAGS := $(EIGEN_INC) \
 CXXFLAGS := -std=c++20 -O3 -fopenmp
 LDFLAGS  := -fopenmp $(HDF5_LIBS) $(FFT_LIBS)
 
+MPI ?= 0
+ifeq ($(MPI),1)
+  CXX      := mpicxx
+  CPPFLAGS += -DUSE_MPI
+endif
+
 SRC_KITEX := $(shell find Src -name '*.cpp')
 SRC_TOOLS := $(shell find tools/Src -name '*.cpp')
 
