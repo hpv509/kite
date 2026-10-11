@@ -830,6 +830,21 @@ class Calculation:
         return self._p_wave_c
 
     @property
+    def get_sp_wave_c(self):
+        """Returns the requested sp-wave calculation enforcing translation symmetry."""
+        return self._sp_wave_c
+
+    @property
+    def get_s_wave(self):
+        """Returns the requested spatially resolved s-wave calculation."""
+        return self._s_wave
+
+    @property
+    def get_p_wave(self):
+        """Returns the requested spatially resolved p-wave calculation."""
+        return self._p_wave
+
+    @property
     def get_bond_map(self):
         """Returns the requested equilibrium bond map (local currents)."""
         return self._bond_map
@@ -936,6 +951,9 @@ class Calculation:
         self._energy_shift = configuration.energy_shift
         self._s_wave_a                       = []
         self._p_wave_c                       = []
+        self._sp_wave_c                      = []
+        self._s_wave                         = []
+        self._p_wave                         = []
         self._bond_map                       = []
         self._dos                            = []
         self._ldos                           = []
@@ -998,47 +1016,223 @@ class Calculation:
 
     def p_wave_clean(
         self,
-        num_random,
-        num_iterations,
-        N0,
-        tau,
-        prev_iterations=0,
+        num_random_transient,
+        transient_iterations,
+        tail_stages,
+        stage_iterations=3,
+        depth=5,
+        mixing=1.0,
         average_bonds=True,
     ):
-        """Self-consistent clean bond-resolved pairing calculation.
+        """Self-consistent clean bond-resolved pairing calculation
+        with Anderson acceleration.
 
-        Parameters
-        ----------
-        num_random : int
-            Number of random vectors.
-        num_iterations : int
-            Number of self-consistency iterations to run in *this* call.
-        N0, tau : float
-            Smooth logistic weight parameters, validated by
-            `sigmoid_weight_schedule`.
-        prev_iterations : int
-            Iterations already completed in a previous run. The mixing
-            state this implies is recomputed here from (N0, tau,
-            prev_iterations) via `sigmoid_u_init`, so nothing needs to be
-            read back from a previous run's output.
-        average_bonds : bool
-            Average the gap over symmetry-equivalent bonds at every step.
+        Transient: `transient_iterations` Anderson steps on one frozen set of
+        `num_random_transient` (R0) vectors per MPI rank.
+
+        Tail: `tail_stages` stages; stage k runs `stage_iterations` Anderson
+        steps on a frozen set of R0 * 2**k vectors, starting from the
+        previous stage.
+
+        The result is the last stage's bond-resolved Delta.
         """
-        N0, tau = sigmoid_weight_schedule(
-            N0, tau, total_iterations=num_iterations + prev_iterations
-        )
-        u_init = sigmoid_u_init(prev_iterations, N0, tau)
-        self._p_wave_c.append(
-            {
-                "num_random": num_random,
-                "num_iterations": num_iterations,
-                "prev_iterations": prev_iterations,
-                "N0": N0,
-                "tau": tau,
-                "u_init": u_init,
-                "average_bonds": bool(average_bonds),
-            }
-        )
+
+        n_tr = int(transient_iterations)
+        n_st = int(tail_stages)
+        n_it = int(stage_iterations)
+
+        if n_tr < 1 or n_st < 0:
+            raise SystemExit(
+                'p_wave_clean: transient_iterations >= 1 and '
+                'tail_stages >= 0 required.'
+            )
+
+        if n_st > 0 and n_it < 1:
+            raise SystemExit(
+                'p_wave_clean: stage_iterations must be >= 1.'
+            )
+
+        if int(num_random_transient) <= 0:
+            raise SystemExit(
+                'p_wave_clean: num_random_transient must be positive.'
+            )
+
+        if int(depth) < 0:
+            raise SystemExit(
+                'p_wave_clean: depth must be >= 0.'
+            )
+
+        if not float(mixing) > 0.0:
+            raise SystemExit(
+                'p_wave_clean: mixing must be positive.'
+            )
+
+        self._p_wave_c.append({
+            "num_random_transient": int(num_random_transient),
+            "transient_iterations": n_tr,
+            "tail_stages": n_st,
+            "stage_iterations": max(n_it, 1),
+            "depth": int(depth),
+            "mixing": float(mixing),
+            "average_bonds": bool(average_bonds),
+        })
+
+    def sp_wave_clean(
+        self,
+        num_random_transient,
+        transient_iterations,
+        tail_stages,
+        stage_iterations=3,
+        depth=5,
+        mixing=1.0,
+        average_bonds=True,
+    ):
+        """Calculate clean coupled s- and p-wave order parameters."""
+
+        n_tr = int(transient_iterations)
+        n_st = int(tail_stages)
+        n_it = int(stage_iterations)
+
+        if int(num_random_transient) <= 0:
+            raise ValueError("num_random_transient must be positive.")
+
+        if n_tr < 1:
+            raise ValueError("transient_iterations must be at least 1.")
+
+        if n_st < 0:
+            raise ValueError("tail_stages must be non-negative.")
+
+        if n_st > 0 and n_it < 1:
+            raise ValueError("stage_iterations must be at least 1 when tail_stages > 0.")
+
+        if int(depth) < 0:
+            raise ValueError("depth must be non-negative.")
+
+        if not np.isfinite(float(mixing)) or float(mixing) <= 0:
+            raise ValueError("mixing must be finite and positive.")
+
+        self._sp_wave_c.append({
+            "num_random_transient": int(num_random_transient),
+            "transient_iterations": n_tr,
+            "tail_stages": n_st,
+            "stage_iterations": max(n_it, 1),
+            "depth": int(depth),
+            "mixing": float(mixing),
+            "average_bonds": bool(average_bonds),
+        })
+
+    def s_wave(
+        self,
+        num_random_transient,
+        transient_iterations,
+        tail_stages,
+        stage_iterations=3,
+        depth=5,
+        mixing=1.0,
+        prev_iterations=0,
+        init_map=None,
+    ):
+        """Spatially resolved self-consistent onsite s-wave gap.
+
+        Uses Anderson acceleration on the full real-space Delta map.
+
+        `init_map`, when supplied, is a previous real-space Delta map in
+        physical energy units.
+        """
+
+        n_tr = int(transient_iterations)
+        n_st = int(tail_stages)
+        n_it = int(stage_iterations)
+        n_prev = int(prev_iterations)
+
+        if n_tr < 1 or n_st < 0:
+            raise SystemExit('s_wave: transient_iterations >= 1 and tail_stages >= 0 required.')
+
+        if n_st > 0 and n_it < 1:
+            raise SystemExit('s_wave: stage_iterations must be >= 1.')
+
+        if int(num_random_transient) <= 0:
+            raise SystemExit('s_wave: num_random_transient must be positive.')
+
+        if int(depth) < 0:
+            raise SystemExit('s_wave: depth must be >= 0.')
+
+        if not float(mixing) > 0.0:
+            raise SystemExit('s_wave: mixing must be positive.')
+
+        if n_prev < 0:
+            raise SystemExit('s_wave: prev_iterations must be >= 0.')
+
+        map_array = None
+
+        if init_map is not None:
+            map_array = np.asarray(init_map)
+
+            if np.iscomplexobj(map_array):
+                if np.max(np.abs(map_array.imag)) > 1e-12:
+                    raise SystemExit('s_wave: init_map must be real.')
+                map_array = map_array.real
+
+            map_array = np.asarray(map_array, dtype=np.float64).reshape(-1)
+
+            if not np.all(np.isfinite(map_array)):
+                raise SystemExit('s_wave: init_map contains non-finite values.')
+
+        self._s_wave.append({
+            "num_random_transient": int(num_random_transient),
+            "transient_iterations": n_tr,
+            "tail_stages": n_st,
+            "stage_iterations": max(n_it, 1),
+            "depth": int(depth),
+            "mixing": float(mixing),
+            "prev_iterations": n_prev,
+            "init_map": map_array,
+        })
+
+    def p_wave(
+        self,
+        num_random_transient,
+        transient_iterations,
+        tail_stages,
+        stage_iterations=3,
+        depth=5,
+        mixing=1.0,
+        prev_iterations=0
+    ):
+        """Spatially resolved self-consistent nearest-neighbour p-wave calculation."""
+
+        n_tr = int(transient_iterations)
+        n_st = int(tail_stages)
+        n_it = int(stage_iterations)
+
+        if n_tr < 1 or n_st < 0:
+            raise SystemExit('p_wave: transient_iterations >= 1 and '
+                'tail_stages >= 0 required.')
+
+        if n_st > 0 and n_it < 1:
+            raise SystemExit('p_wave: stage_iterations must be >= 1.')
+
+        if int(num_random_transient) <= 0:
+            raise SystemExit('p_wave: num_random_transient must be positive.')
+
+        if int(depth) < 0:
+            raise SystemExit('p_wave: depth must be >= 0.')
+
+        if not float(mixing) > 0.0:
+            raise SystemExit('p_wave: mixing must be positive.')
+
+        if int(prev_iterations) < 0:
+            raise SystemExit('p_wave: prev_iterations must be >= 0.')
+
+        self._p_wave.append({
+            "num_random_transient": int(num_random_transient),
+            "transient_iterations": n_tr,
+            "tail_stages": n_st,
+            "stage_iterations": max(n_it, 1),
+            "depth": int(depth),
+            "mixing": float(mixing),
+            "prev_iterations": int(prev_iterations),
+        })
 
     def bond_map(self, num_random, chemical_potential, temperature, bonds=None):
         """Equilibrium bond map x_f(R) = Tr[f(H) W_f(R)] at one chemical potential.
@@ -1827,7 +2021,7 @@ def config_system(lattice, config, calculation, modification=None, **kwargs):
         config._is_complex = 1
         config.set_type()
 
-    if (calculation.get_s_wave_anderson or calculation.get_p_wave_c) and complx == 0:
+    if (calculation.get_s_wave_anderson or calculation.get_p_wave_c or calculation.get_sp_wave_c or calculation.get_s_wave or calculation.get_p_wave) and complx == 0:
         print('A superconducting BdG calculation was requested, but is_complex is 0. Automatically turning is_complex to 1!')
         config._is_complex = 1
         config.set_type()
@@ -1853,12 +2047,62 @@ def config_system(lattice, config, calculation, modification=None, **kwargs):
                 's_wave_anderson needs seed_h != 0 and seed_v != 0 in '
                 'kite.Configuration: seed 0 means std::random_device, and the '
                 'random vectors would not be the same at every iteration.')
+
     if calculation.get_p_wave_c:
         if pairing_ is None or not pairing_._terms or kwargs.get('bdg', None) is None:
             raise SystemExit(
                 'A p_wave_clean calculation needs config_system(..., '
                 'pairing=kite.Pairing(...) with at least one add_pairing bond, '
                 'bdg=kite.BdG(...)).')
+        if config.seed_h == 0 or config.seed_v == 0:
+            raise SystemExit(
+                'p_wave_clean needs seed_h != 0 and seed_v != 0 in '
+                'kite.Configuration: seed 0 means std::random_device, and the '
+                'random vectors would not be the same at every iteration.')
+
+    if calculation.get_sp_wave_c:
+        if pairing_ is None or not pairing_._terms or kwargs.get('bdg', None) is None:
+            raise SystemExit(
+                'An sp_wave_clean calculation needs config_system(..., '
+                'pairing=kite.Pairing(...) with at least one add_pairing bond, '
+                'bdg=kite.BdG(...)).')
+        if config.seed_h == 0 or config.seed_v == 0:
+            raise SystemExit(
+                'sp_wave_clean needs seed_h != 0 and seed_v != 0 in '
+                'kite.Configuration: seed 0 means std::random_device, and the '
+                'random vectors would not be the same at every iteration.')
+
+    if calculation.get_s_wave and calculation.get_s_wave_anderson:
+        raise SystemExit('Do not request s_wave and s_wave_anderson in the same configuration.')
+
+    if calculation.get_s_wave:
+        if pairing_ is None or kwargs.get('bdg', None) is None:
+            raise SystemExit('A spatial s_wave calculation needs config_system(..., '
+                'pairing=kite.Pairing(...), bdg=kite.BdG(...)).')
+
+        if config.seed_h == 0 or config.seed_v == 0:
+            raise SystemExit('s_wave needs seed_h != 0 and seed_v != 0 in '
+                    'kite.Configuration: seed 0 means std::random_device, and the '
+                    'random vectors would not be the same at every iteration.')
+
+        s_delta0 = pairing_._build()['SDelta0']
+        if np.max(np.abs(np.imag(s_delta0))) > 1e-12:
+            raise SystemExit('s_wave currently supports only a real onsite Delta seed.')
+
+    if calculation.get_p_wave:
+        if pairing_ is None or not pairing_._terms or kwargs.get('bdg', None) is None:
+            raise SystemExit('A spatial p_wave calculation needs config_system(..., '
+                'pairing=kite.Pairing(...) with at least one add_pairing bond, '
+                'bdg=kite.BdG(...)).')
+
+        if config.seed_h == 0 or config.seed_v == 0:
+            raise SystemExit('p_wave needs seed_h != 0 and seed_v != 0 in '
+                'kite.Configuration: seed 0 means std::random_device, and the '
+                'random vectors would not be the same at every iteration.')
+
+        p_delta0 = pairing_._build()['Delta0']
+        if np.max(np.abs(np.imag(p_delta0))) > 1e-12:
+            raise SystemExit('p_wave currently supports only a real nearest-neighbour Delta seed.')
 
     if pairing_ is not None and complx == 0:
         print('A pairing channel was supplied, but is_complex is 0. Automatically turning is_complex to 1!')
@@ -2332,13 +2576,65 @@ def config_system(lattice, config, calculation, modification=None, **kwargs):
         single_p_wave = calculation.get_p_wave_c[0]
 
         grpc_p = grpc.create_group('p_wave_c')
-        grpc_p.create_dataset('NumRandoms', data=single_p_wave['num_random'], dtype=np.int32)
-        grpc_p.create_dataset('NumIterations', data=single_p_wave['num_iterations'], dtype=np.int32)
-        grpc_p.create_dataset('PrevIterations', data=single_p_wave['prev_iterations'], dtype=np.int32)
-        grpc_p.create_dataset('N0', data=single_p_wave['N0'], dtype=np.float64)
-        grpc_p.create_dataset('Tau', data=single_p_wave['tau'], dtype=np.float64)
-        grpc_p.create_dataset('InitDamping', data=single_p_wave['u_init'], dtype=np.float64)
+        grpc_p.create_dataset('NumRandomsTransient', data=single_p_wave['num_random_transient'], dtype=np.int32)
+        grpc_p.create_dataset('TransientIterations', data=single_p_wave['transient_iterations'], dtype=np.int32)
+        grpc_p.create_dataset('TailStages', data=single_p_wave['tail_stages'], dtype=np.int32)
+        grpc_p.create_dataset('StageIterations', data=single_p_wave['stage_iterations'], dtype=np.int32)
+        grpc_p.create_dataset('Depth', data=single_p_wave['depth'], dtype=np.int32)
+        grpc_p.create_dataset('Mixing', data=single_p_wave['mixing'], dtype=np.float64)
         grpc_p.create_dataset('AverageBonds', data=int(single_p_wave['average_bonds']), dtype=np.int32)
+
+    if calculation.get_sp_wave_c:
+        if len(calculation.get_sp_wave_c) > 1:
+            raise SystemExit('Only a single s+p-wave calculation is currently allowed.')
+
+        single_sp_wave = calculation.get_sp_wave_c[0]
+
+        grpc_sp = grpc.create_group('sp_wave_c')
+        grpc_sp.create_dataset('NumRandomsTransient', data=single_sp_wave['num_random_transient'], dtype=np.int32)
+        grpc_sp.create_dataset('TransientIterations', data=single_sp_wave['transient_iterations'], dtype=np.int32)
+        grpc_sp.create_dataset('TailStages', data=single_sp_wave['tail_stages'], dtype=np.int32)
+        grpc_sp.create_dataset('StageIterations', data=single_sp_wave['stage_iterations'], dtype=np.int32)
+        grpc_sp.create_dataset('Depth', data=single_sp_wave['depth'], dtype=np.int32)
+        grpc_sp.create_dataset('Mixing', data=single_sp_wave['mixing'], dtype=np.float64)
+        grpc_sp.create_dataset('AverageBonds', data=int(single_sp_wave['average_bonds']), dtype=np.int32)
+
+    if calculation.get_s_wave:
+        if len(calculation.get_s_wave) > 1:
+            raise SystemExit('Only a single spatial s-wave calculation is currently allowed.')
+
+        single_s_wave = calculation.get_s_wave[0]
+
+        grpc_s = grpc.create_group('s_wave')
+        grpc_s.create_dataset('NumRandomsTransient', data=single_s_wave['num_random_transient'], dtype=np.int32)
+        grpc_s.create_dataset('TransientIterations', data=single_s_wave['transient_iterations'], dtype=np.int32)
+        grpc_s.create_dataset('TailStages', data=single_s_wave['tail_stages'], dtype=np.int32)
+        grpc_s.create_dataset('StageIterations', data=single_s_wave['stage_iterations'], dtype=np.int32)
+        grpc_s.create_dataset('Depth', data=single_s_wave['depth'], dtype=np.int32)
+        grpc_s.create_dataset('Mixing', data=single_s_wave['mixing'], dtype=np.float64)
+        grpc_s.create_dataset('PrevIterations', data=single_s_wave['prev_iterations'], dtype=np.int32)
+
+        if single_s_wave['init_map'] is not None:
+            init_map = np.asarray(single_s_wave['init_map'], dtype=np.float64).reshape(-1)
+            expected_size = int(np.prod(np.asarray(config.leng[:space_size], dtype=np.int64)) * np.sum(num_orbitals))
+            if init_map.size != expected_size:
+                raise SystemExit('s_wave: init_map has {} entries, but this lattice requires {}.'.format(init_map.size, expected_size))
+            grpc_s.create_dataset('InitMap', data=init_map, dtype=np.float64)
+
+    if calculation.get_p_wave:
+        if len(calculation.get_p_wave) > 1:
+            raise SystemExit('Only a single spatial p-wave calculation is currently allowed.')
+
+        single_p_wave = calculation.get_p_wave[0]
+
+        grpc_p = grpc.create_group('p_wave')
+        grpc_p.create_dataset('NumRandomsTransient', data=single_p_wave['num_random_transient'], dtype=np.int32)
+        grpc_p.create_dataset('TransientIterations', data=single_p_wave['transient_iterations'], dtype=np.int32)
+        grpc_p.create_dataset('TailStages', data=single_p_wave['tail_stages'], dtype=np.int32)
+        grpc_p.create_dataset('StageIterations', data=single_p_wave['stage_iterations'], dtype=np.int32)
+        grpc_p.create_dataset('Depth', data=single_p_wave['depth'], dtype=np.int32)
+        grpc_p.create_dataset('Mixing', data=single_p_wave['mixing'], dtype=np.float64)
+        grpc_p.create_dataset('PrevIterations', data=single_p_wave['prev_iterations'], dtype=np.int32)
 
     if calculation.get_bond_map:
         if len(calculation.get_bond_map) > 1:

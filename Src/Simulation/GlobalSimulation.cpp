@@ -73,8 +73,11 @@ GlobalSimulation<T, D>::GlobalSimulation(char *name) : rglobal(name)
     simul.calc_lcm();
     simul.calc_st_lcm();
     simul.calc_bond_map();
-    simul.calc_pwave_clean();
     simul.calc_swave_anderson();
+    simul.calc_pwave_clean();
+    simul.calc_spwave_clean();
+    simul.calc_swave();
+    simul.calc_pwave();
   }
   debug_message("Left global_simulation\n");
 }

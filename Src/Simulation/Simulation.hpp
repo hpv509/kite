@@ -290,7 +290,7 @@ public:
   void store_bond_map(const int)
     requires Complex<T>;
 
-  // S-Wave; Anderson-mixed gap equation (SimulationSWaveCleanAn.cpp)
+  // S-Wave Clean (SimulationSWaveCleanAn.cpp)
   void calc_swave_anderson()
     requires Complex<T>;
   void calc_swave_anderson()
@@ -305,11 +305,16 @@ public:
     const value_type
   )
     requires Complex<T>;
-  void
-  store_s_wave_anderson(const unsigned, const Eigen::Array<T, -1, 1> &, const Eigen::Array<value_type, -1, 1> &, const Eigen::Array<value_type, -1, -1> &, const Eigen::Array<value_type, -1, -1> &)
+  void store_s_wave_anderson(
+    const unsigned,
+    const Eigen::Array<T, -1, 1> &,
+    const Eigen::Array<value_type, -1, 1> &,
+    const Eigen::Array<value_type, -1, -1> &,
+    const Eigen::Array<value_type, -1, -1> &
+  )
     requires Complex<T>;
 
-  // P-Wave; bond pairing gap equation (SimulationPWaveClean.cpp)
+  // P-Wave Clean (SimulationPWaveClean.cpp)
   void calc_pwave_clean()
     requires Complex<T>;
   void calc_pwave_clean()
@@ -319,8 +324,8 @@ public:
     const int,
     const int,
     const int,
-    const value_type,
-    const value_type,
+    const int,
+    const int,
     const value_type,
     const bool
   )
@@ -328,9 +333,96 @@ public:
   void store_p_wave_clean(
     const unsigned,
     const Eigen::Array<T, -1, -1> &,
-    const value_type
+    const Eigen::Array<value_type, -1, -1> &,
+    const Eigen::Array<value_type, -1, 1> &
   )
     requires Complex<T>;
+
+  // SP-Wave Clean (SimulationSPWaveClean.cpp)
+  void calc_spwave_clean()
+    requires Complex<T>;
+  void calc_spwave_clean()
+    requires Real<T>
+  {};
+  
+  void sp_wave_clean(
+    const int,
+    const int,
+    const int,
+    const int,
+    const int,
+    const value_type,
+    const bool
+  )
+    requires Complex<T>;
+
+  void store_sp_wave_clean(
+    const unsigned,
+    const Eigen::Array<T, -1, 1> &,
+    const Eigen::Array<T, -1, -1> &,
+    const Eigen::Array<value_type, -1, 1> &,
+    const Eigen::Array<value_type, -1, 1> &,
+    const Eigen::Array<value_type, -1, 1> &,
+    const Eigen::Array<value_type, -1, -1> &,
+    const Eigen::Array<value_type, -1, -1> &,
+    const Eigen::Array<value_type, -1, -1> &,
+    const Eigen::Array<value_type, -1, -1> &
+  )
+    requires Complex<T>;
+
+  // S-Wave (SimulationSWave.cpp)
+  void calc_swave()
+    requires Complex<T>;
+  
+  void calc_swave()
+    requires Real<T>
+  {};
+  
+  void s_wave(
+    const int,
+    const int,
+    const int,
+    const int,
+    const int,
+    const value_type,
+    const int
+  )
+    requires Complex<T>;
+
+  void store_s_wave(
+    const unsigned,
+    const Eigen::Array<value_type, -1, -1> &,
+    const Eigen::Array<value_type, -1, 1> &,
+    const Eigen::Array<value_type, -1, 1> &
+  )
+    requires Complex<T>;
+
+  // P-Wave (SimulationPWave.cpp)
+  void calc_pwave()
+    requires Complex<T>;
+  void calc_pwave()
+    requires Real<T>
+  {};
+  
+  void p_wave(
+    const int,
+    const int,
+    const int,
+    const int,
+    const int,
+    const value_type,
+    const int
+  )
+    requires Complex<T>;
+
+  void store_p_wave(
+    const unsigned,
+    const Eigen::Array<value_type, -1, -1> &,
+    const Eigen::Array<value_type, -1, 1> &,
+    const Eigen::Array<value_type, -1, 1> &
+  )
+    requires Complex<T>;
+  
 };
 
 #endif

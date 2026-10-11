@@ -21,7 +21,7 @@ template <typename T, unsigned D>
 void Simulation<T, D>::calc_swave_anderson()
   requires Complex<T>
 {
-  debug_message("Entered Simulation::calc_swave_anderson\n");
+  debug_message("Entered Simulation::calc_swave_clean\n");
   std::string base_grp = "/Calculation/s_wave_anderson/";
   std::string tmp = base_grp + "NumRandomsTransient";
 #pragma omp barrier
@@ -34,7 +34,7 @@ void Simulation<T, D>::calc_swave_anderson()
       get_hdf5<int>(&dummy_variable, &file, tmp);
       Global.calculate_s_wave = true;
     } catch (H5::Exception &e) {
-      debug_message("s_wave_anderson: no need to calculate it.\n");
+      debug_message("s_wave_clean: no need to calculate it.\n");
     }
     file.close();
   }
@@ -45,7 +45,7 @@ void Simulation<T, D>::calc_swave_anderson()
 #pragma omp barrier
   if (local_calculate_s_wave) {
 #pragma omp master
-    std::cout << "Calculating SWave (Anderson).\n";
+    std::cout << "Calculating SWaveClean.\n";
 #pragma omp barrier
     int randoms_transient, n_transient, n_stages, stage_itr, depth;
     value_type mixing;
@@ -66,9 +66,7 @@ void Simulation<T, D>::calc_swave_anderson()
       get_hdf5<value_type>(&mixing, &file, path);
       file.close();
     }
-    s_wave_anderson(
-      randoms_transient, n_transient, n_stages, stage_itr, depth, mixing
-    );
+    s_wave_anderson(randoms_transient, n_transient, n_stages, stage_itr, depth, mixing);
   }
 }
 
@@ -79,23 +77,22 @@ void Simulation<T, D>::s_wave_anderson(
   const int n_stages_,
   const int stage_itr_,
   const int depth_,
-  const value_type beta_
+  const value_type mixing_
 )
   requires Complex<T>
 {
-  debug_message("Entered SWaveAnderson\n");
+  debug_message("Entered SWaveClean\n");
   if constexpr (D != 2 || !pairing::is_s_wave) {
     (void)randoms_transient_;
     (void)n_transient_;
     (void)n_stages_;
     (void)stage_itr_;
     (void)depth_;
-    (void)beta_;
+    (void)mixing_;
 #pragma omp master
     std::cerr
-      << (D != 2 ? "s_wave_anderson: only implemented for D = 2.\n"
-                 : "s_wave_anderson: this build has no on-site "
-                   "channel. Build with PAIRING=1 or 3.\n");
+      << (D != 2 ? "s_wave_clean: only implemented for D = 2.\n"
+                 : "s_wave_clean: this build has no on-site channel.\n");
 #pragma omp barrier
     exit(1);
   } else {
@@ -123,7 +120,7 @@ void Simulation<T, D>::s_wave_anderson(
     Vec x_prev(r.Orb), f_prev(r.Orb);
     unsigned n_hist = 0;
     value_type res_prev = 0;
-    constexpr value_type max_log_step = 0.405;
+    constexpr value_type max_log_step = 0.405; // exp(0.405)=1.5
     constexpr value_type amp_min = 1e-12;
 
     mean_delta = h.pr.SDelta0;
@@ -203,18 +200,18 @@ void Simulation<T, D>::s_wave_anderson(
       x_prev = x;
       f_prev = f;
       res_prev = res;
-      Vec step = beta_ * f;
+      Vec step = mixing_ * f;
       if (n_hist > 0) {
         const Mat dFh = dF.leftCols(n_hist);
         const Mat dXh = dX.leftCols(n_hist);
         Eigen::CompleteOrthogonalDecomposition<Mat> cod(dFh);
         cod.setThreshold(1e-8);
         const Vec gamma = cod.solve(f);
-        const Mat G = dXh + beta_ * dFh;
+        const Mat G = dXh + mixing_ * dFh;
         step -= G * gamma;
       }
       if (std::real(step.dot(f)) <= 0) {
-        step = beta_ * f;
+        step = mixing_ * f;
         n_hist = 0;
       }
       const value_type s_max = step.cwiseAbs().maxCoeff();
@@ -240,7 +237,7 @@ void Simulation<T, D>::store_s_wave_anderson(
 )
   requires Complex<T>
 {
-  debug_message("Entered store_s_wave_anderson\n");
+  debug_message("Entered store_s_wave_clean\n");
 #pragma omp master
   if (kmpi::is_root()) {
     H5::H5File file(name, H5F_ACC_RDWR);
@@ -262,8 +259,8 @@ void Simulation<T, D>::store_s_wave_anderson(
 
     Eigen::Array<value_type, -1, -1> delta_ri(2, r.Orb);
     for (unsigned io = 0; io < r.Orb; ++io) {
-      delta_ri(0, io) = mean_delta_(io).real();
-      delta_ri(1, io) = mean_delta_(io).imag();
+      delta_ri(0, io) = mean_delta_(io).real() * h.bdg.energy_scale;
+      delta_ri(1, io) = mean_delta_(io).imag() * h.bdg.energy_scale;
     }
     ng = base_grp + "Delta";
     write_hdf5(delta_ri, &file, ng);
@@ -276,7 +273,7 @@ void Simulation<T, D>::store_s_wave_anderson(
 #pragma omp master
   kmpi::barrier();
 #pragma omp barrier
-  debug_message("Left store_s_wave_anderson\n");
+  debug_message("Left store_s_wave_clean\n");
 }
 
 #define instantiate(type, dim) template class Simulation<type, dim>;
