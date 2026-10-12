@@ -1142,49 +1142,50 @@ class Calculation:
 
         n_tr = int(transient_iterations)
         n_st = int(tail_stages)
-        n_it = int(stage_iterations)
+        n_it = max(int(stage_iterations), 1)
         n_prev = int(prev_iterations)
+        n_rd = int(num_random_transient)
+        n_dep = int(depth)
+        mix = float(mixing)
 
         if n_tr < 1 or n_st < 0:
             raise SystemExit('s_wave: transient_iterations >= 1 and tail_stages >= 0 required.')
 
-        if n_st > 0 and n_it < 1:
+        if n_st > 0 and int(stage_iterations) < 1:
             raise SystemExit('s_wave: stage_iterations must be >= 1.')
 
-        if int(num_random_transient) <= 0:
+        if n_rd <= 0:
             raise SystemExit('s_wave: num_random_transient must be positive.')
 
-        if int(depth) < 0:
+        if n_dep < 0:
             raise SystemExit('s_wave: depth must be >= 0.')
 
-        if not float(mixing) > 0.0:
-            raise SystemExit('s_wave: mixing must be positive.')
+        if not np.isfinite(mix) or mix <= 0.0:
+            raise SystemExit('s_wave: mixing must be finite and positive.')
 
         if n_prev < 0:
             raise SystemExit('s_wave: prev_iterations must be >= 0.')
 
         map_array = None
-
         if init_map is not None:
             map_array = np.asarray(init_map)
-
+            if map_array.size == 0:
+                raise SystemExit('s_wave: init_map cannot be empty.')
             if np.iscomplexobj(map_array):
                 if np.max(np.abs(map_array.imag)) > 1e-12:
                     raise SystemExit('s_wave: init_map must be real.')
                 map_array = map_array.real
-
             map_array = np.asarray(map_array, dtype=np.float64).reshape(-1)
-
             if not np.all(np.isfinite(map_array)):
                 raise SystemExit('s_wave: init_map contains non-finite values.')
 
         self._s_wave.append({
-            "num_random_transient": int(num_random_transient),
+            "num_random_transient": n_rd,
             "transient_iterations": n_tr,
             "tail_stages": n_st,
-            "stage_iterations": max(n_it, 1),
-            "depth": int(depth),
-            "mixing": float(mixing),
+            "stage_iterations": n_it,
+            "depth": n_dep,
+            "mixing": mix,
             "prev_iterations": n_prev,
             "init_map": map_array,
         })
@@ -1197,41 +1198,64 @@ class Calculation:
         stage_iterations=3,
         depth=5,
         mixing=1.0,
-        prev_iterations=0
+        prev_iterations=0,
+        init_map=None,
     ):
-        """Spatially resolved self-consistent nearest-neighbour p-wave calculation."""
+        """Spatially resolved self-consistent nearest-neighbour p-wave calculation.
+
+        init_map, when supplied, is a previous real-space bond map
+        in physical energy units.
+        """
 
         n_tr = int(transient_iterations)
         n_st = int(tail_stages)
-        n_it = int(stage_iterations)
+        n_it = max(int(stage_iterations), 1)
+        n_prev = int(prev_iterations)
+        n_rd = int(num_random_transient)
+        n_dep = int(depth)
+        mix = float(mixing)
 
         if n_tr < 1 or n_st < 0:
             raise SystemExit('p_wave: transient_iterations >= 1 and '
                 'tail_stages >= 0 required.')
 
-        if n_st > 0 and n_it < 1:
+        if n_st > 0 and int(stage_iterations) < 1:
             raise SystemExit('p_wave: stage_iterations must be >= 1.')
 
-        if int(num_random_transient) <= 0:
+        if n_rd <= 0:
             raise SystemExit('p_wave: num_random_transient must be positive.')
 
-        if int(depth) < 0:
+        if n_dep < 0:
             raise SystemExit('p_wave: depth must be >= 0.')
 
-        if not float(mixing) > 0.0:
-            raise SystemExit('p_wave: mixing must be positive.')
+        if not np.isfinite(mix) or mix <= 0.0:
+            raise SystemExit('p_wave: mixing must be finite and positive.')
 
-        if int(prev_iterations) < 0:
+        if n_prev < 0:
             raise SystemExit('p_wave: prev_iterations must be >= 0.')
 
+        map_array = None
+        if init_map is not None:
+            map_array = np.asarray(init_map)
+            if map_array.size == 0:
+                raise SystemExit('p_wave: init_map cannot be empty.')
+            if np.iscomplexobj(map_array):
+                if np.max(np.abs(map_array.imag)) > 1e-12:
+                    raise SystemExit('p_wave: init_map must be real.')
+                map_array = map_array.real
+            map_array = np.asarray(map_array, dtype=np.float64).reshape(-1)
+            if not np.all(np.isfinite(map_array)):
+                raise SystemExit('p_wave: init_map contains non-finite values.')
+
         self._p_wave.append({
-            "num_random_transient": int(num_random_transient),
+            "num_random_transient": n_rd,
             "transient_iterations": n_tr,
             "tail_stages": n_st,
-            "stage_iterations": max(n_it, 1),
-            "depth": int(depth),
-            "mixing": float(mixing),
-            "prev_iterations": int(prev_iterations),
+            "stage_iterations": n_it,
+            "depth": n_dep,
+            "mixing": mix,
+            "prev_iterations": n_prev,
+            "init_map": map_array,
         })
 
     def bond_map(self, num_random, chemical_potential, temperature, bonds=None):
@@ -2635,6 +2659,15 @@ def config_system(lattice, config, calculation, modification=None, **kwargs):
         grpc_p.create_dataset('Depth', data=single_p_wave['depth'], dtype=np.int32)
         grpc_p.create_dataset('Mixing', data=single_p_wave['mixing'], dtype=np.float64)
         grpc_p.create_dataset('PrevIterations', data=single_p_wave['prev_iterations'], dtype=np.int32)
+
+        if single_p_wave['init_map'] is not None:
+            init_map = np.asarray(single_p_wave['init_map'], dtype=np.float64).reshape(-1)
+            max_bonds = int(pairing_._build()['MaxPairings'])
+            expected_size = int(np.prod(np.asarray(config.leng[:space_size],    dtype=np.int64)) * np.sum(num_orbitals) * max_bonds)
+            if init_map.size != expected_size:
+                raise SystemExit('p_wave: init_map has {} entries, but this lattice requires {}.'.format(init_map.size, expected_size))
+            grpc_p.create_dataset('InitMap', data=init_map, dtype=np.float64)
+
 
     if calculation.get_bond_map:
         if len(calculation.get_bond_map) > 1:
